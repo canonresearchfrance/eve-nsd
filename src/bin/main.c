@@ -439,7 +439,6 @@ _cb_dbus_request_name(void *data, const EDBus_Message *msg,
                                                   "open_url");
          edbus_message_arguments_append(open_url, "s", response->url);
          edbus_connection_send(response->conn, open_url, NULL, NULL, -1);
-         edbus_message_unref(open_url);
       }
       elm_exit();
    }
