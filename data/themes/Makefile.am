@@ -13,6 +13,8 @@ images = \
     bt_back_selected.png \
     bt_more_normal.png \
     bt_more_selected.png \
+    bt_valid_normal.png \
+    bt_valid_selected.png \
     bt_fav_normal.png \
     bt_fav_selected.png \
     bt_forward_normal.png \

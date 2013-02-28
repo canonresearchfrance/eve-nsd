@@ -52,6 +52,14 @@ static Evas_Object *more_content_get(void *data, Evas_Object *obj, const char *p
 static Eina_Bool more_state_get(void *data __UNUSED__, Evas_Object *obj __UNUSED__, const char *part __UNUSED__);
 static void more_del(void *data __UNUSED__, Evas_Object *obj __UNUSED__);
 
+static char *service_list_text_get(void *data, Evas_Object *obj __UNUSED__, const char *part);
+static Evas_Object *service_content_get(void *data, Evas_Object *obj, const char *part);
+static Eina_Bool service_state_get(void *data __UNUSED__, Evas_Object *obj __UNUSED__, const char *part __UNUSED__);
+static void service_del(void *data __UNUSED__, Evas_Object *obj __UNUSED__);
+
+static void on_service_item_click(void *data, Evas_Object *obj, void *event_info __UNUSED__);
+static void on_valid_click(void *data, Evas_Object *obj, void *event_info __UNUSED__);
+
 static void proxy_config_home_page_set(Config *config, const char *home_page);
 
 typedef enum {
@@ -425,6 +433,26 @@ static const Elm_Genlist_Item_Class glic_page = {
        .content_get = more_content_get,
        .state_get = more_state_get,
        .del = more_del
+    },
+   .item_style = "double_label/ewebkit"
+};
+
+static const Elm_Genlist_Item_Class glic_service_origin = {
+   .func = {
+       .text_get = service_list_text_get,
+       .content_get = service_content_get,
+       .state_get = service_state_get,
+       .del = service_del
+    },
+   .item_style = "ewebkit"
+};
+
+static const Elm_Genlist_Item_Class glic_service_list = {
+   .func = {
+       .text_get = service_list_text_get,
+       .content_get = service_content_get,
+       .state_get = service_state_get,
+       .del = service_del
     },
    .item_style = "double_label/ewebkit"
 };
@@ -1216,6 +1244,200 @@ on_view_popup_new(void *data __UNUSED__, Evas_Object *view, void *event_info)
                                   on_view_popup_delete, notify);
 
    evas_object_show(notify);
+}
+
+static void 
+on_service_item_change(void *data, Evas_Object *obj, void *event_info __UNUSED__)
+{
+   Service_Item *item = data;
+   Eina_Bool state = elm_check_state_get(obj);
+
+   service_item_allowed_set(item, state);
+}
+
+static void 
+service_list_release(Evas_Object *view)
+{
+   Evas_Object *chrome = evas_object_data_get(view, "chrome");
+   Evas_Object *hl = evas_object_data_get(chrome, "service-list");
+   Evas_Object *ed = elm_layout_edje_get(chrome);
+   Eina_List *service_iter = evas_object_data_get(chrome, "services");
+   Eina_List *l;
+   Ewk_NetworkServices *srv;
+
+   /* release widgets */
+   elm_genlist_clear(hl);
+
+   /* release ewk objects */
+   EINA_LIST_FOREACH(service_iter, l, srv)
+      ewk_network_services_free(srv);
+
+   service_iter = eina_list_free(service_iter);
+   evas_object_data_set(chrome, "services", service_iter);
+
+   edje_object_signal_emit(ed, "hide,service,button", "");
+}
+
+static void
+on_action_nsd(void *data, Evas_Object *o __UNUSED__,
+           const char *emission __UNUSED__, const char *source __UNUSED__)
+{
+   Evas_Object *chrome = data;
+   Evas_Object *ed = elm_layout_edje_get(chrome);
+
+   edje_object_signal_emit(ed, "toggle,service", "");
+}
+
+static void
+on_action_valid(void *data, Evas_Object *o __UNUSED__,
+           const char *emission __UNUSED__, const char *source __UNUSED__)
+{
+   Evas_Object *chrome = data;
+   Evas_Object *ed = elm_layout_edje_get(chrome);
+   Eina_List *service_iter = evas_object_data_get(chrome, "services");
+   Eina_List *l;
+   Ewk_NetworkServices *srv;
+
+   EINA_LIST_FOREACH(service_iter, l, srv)
+      ewk_network_services_allowed_notify(srv);
+
+   service_iter = eina_list_free(service_iter);
+   evas_object_data_set(chrome, "services", service_iter);
+
+   edje_object_signal_emit(ed, "toggle,service", "");
+}
+
+static void 
+service_list_append(void *data, Service_Item *item) 
+{
+   Elm_Object_Item *gl_item = NULL;
+   Evas_Object *list = (Evas_Object*)data;
+
+   if (service_item_have_service(item))
+      gl_item = elm_genlist_item_append(list, &glic_service_list, item, NULL, 
+                                        ELM_GENLIST_ITEM_NONE, NULL, NULL);
+   else
+      gl_item = elm_genlist_item_append(list, &glic_service_origin, item, NULL, 
+                                        ELM_GENLIST_ITEM_NONE, NULL, NULL);
+
+   service_item_widget_set(item, gl_item);
+}
+
+static void
+on_service_refresh_click(void *data, Evas_Object *o __UNUSED__,
+           const char *emission __UNUSED__, const char *source __UNUSED__)
+{
+   Evas_Object *chrome = data;
+   Evas_Object *ed = elm_layout_edje_get(chrome);
+   Evas_Object *hl = evas_object_data_get(chrome, "service-list");
+   Eina_List *service_iter = evas_object_data_get(chrome, "services");
+   Eina_List *service_updated_iter = evas_object_data_get(chrome, "services-updated");
+   Eina_List *l, *updated_l;
+   Ewk_NetworkServices *srv, *updated_srv;
+   Eina_Bool found = EINA_FALSE;
+
+   EINA_LIST_FOREACH(service_iter, l, srv)
+      EINA_LIST_FOREACH(service_updated_iter, updated_l, updated_srv)
+         if (srv == updated_srv) {
+            found = EINA_TRUE;
+            service_updated_iter = eina_list_remove(service_updated_iter, updated_srv);
+            break;
+         }
+
+   if (found == EINA_TRUE) {
+      elm_genlist_clear(hl);
+      service_list_set(service_iter, &service_list_append, hl);
+      elm_genlist_realized_items_update(hl);
+   }
+
+   evas_object_data_set(chrome, "services-updated", service_updated_iter);
+   edje_object_signal_emit(ed, "list,refresh,hide", "");
+}
+
+static void
+on_service_cancel_click(void *data, Evas_Object *o __UNUSED__,
+           const char *emission __UNUSED__, const char *source __UNUSED__)
+{
+   Evas_Object *chrome = data;
+   Evas_Object *ed = elm_layout_edje_get(chrome);
+   Eina_List *service_iter = evas_object_data_get(chrome, "services");
+   Eina_List *l;
+   Ewk_NetworkServices *srv;
+
+   EINA_LIST_FOREACH(service_iter, l, srv)
+      ewk_network_services_denied_notify(srv);
+
+   service_iter = eina_list_free(service_iter);
+   evas_object_data_set(chrome, "services", service_iter);
+
+   edje_object_signal_emit(ed, "toggle,service", "");
+}
+
+static void
+on_view_networkservices_request_started(void *data, Evas_Object *view, void *event_info)
+{
+   Ewk_NetworkServices* services = (Ewk_NetworkServices*)event_info;
+   Evas_Object *chrome = data;
+   Evas_Object *ed = elm_layout_edje_get(chrome);
+   Eina_List *service_iter = evas_object_data_get(chrome, "services");
+    
+   service_iter = eina_list_append(service_iter, services);
+
+   evas_object_data_set(chrome, "services", service_iter);
+   edje_object_signal_emit(ed, "show,service,button", "");
+}
+
+static void
+on_view_networkservices_request_updated(void *data, Evas_Object *view, void *event_info)
+{
+   Ewk_NetworkServices *services = (Ewk_NetworkServices*)event_info;
+   Evas_Object *chrome = data;
+   Evas_Object *ed = elm_layout_edje_get(chrome);
+   Eina_List *service_iter = evas_object_data_get(chrome, "services-updated");
+    
+   service_iter = eina_list_append(service_iter, services);
+
+   evas_object_data_set(chrome, "services-updated", service_iter);
+
+   edje_object_signal_callback_add(ed, "list,refresh,clicked", "", on_service_refresh_click, chrome);
+   edje_object_signal_emit(ed, "list,refresh,show", "");
+}
+
+static void
+on_view_networkservices_request_canceled(void *data, Evas_Object *view, void *event_info)
+{
+   Ewk_NetworkServices *services = (Ewk_NetworkServices*)event_info;
+   Evas_Object *chrome = data;
+   Evas_Object *ed = elm_layout_edje_get(chrome);
+   Eina_List *service_iter = evas_object_data_get(chrome, "services");
+    
+   service_iter = eina_list_remove(service_iter, services);
+
+   evas_object_data_set(chrome, "services", service_iter);
+}
+
+void service_item_widget_update(void *data) 
+{
+    elm_genlist_item_update((Elm_Object_Item *)data);
+}
+
+static void
+on_view_networkservices_request_finished(void *data, Evas_Object *view, void *event_info __UNUSED__)
+{
+   Evas_Object *chrome = data;
+   Evas_Object *ed = elm_layout_edje_get(chrome);
+   Evas_Object *hl = evas_object_data_get(chrome, "service-list");
+   Eina_List *service_iter = evas_object_data_get(chrome, "services");
+
+   if (!service_iter)
+       return;
+
+   elm_genlist_clear(hl);
+   service_list_set(service_iter, &service_list_append, hl);
+
+   edje_object_signal_emit(ed, "list,refresh,hide", "");
+   edje_object_signal_emit(ed, "toggle,service", "");
+   edje_object_signal_callback_add(ed, "list,cancel,clicked", "", on_service_cancel_click, chrome);
 }
 
 static void
@@ -2109,6 +2331,7 @@ on_action_reload(void *data, Evas_Object *o __UNUSED__,
 {
    Evas_Object *view = data;
 
+   service_list_release(view);
    ewk_view_reload(view);
 }
 
@@ -2485,6 +2708,74 @@ more_del(void *data __UNUSED__, Evas_Object *obj __UNUSED__)
 {
 }
 
+static char *
+service_list_text_get(void *data, Evas_Object *obj __UNUSED__, const char *part)
+{
+   Service_Item *si = data;
+
+   if (!si)
+      return strdup("");
+
+   if (!strcmp(part, "elm.text"))
+      return service_item_text_get(si);
+
+   if (!strcmp(part, "elm.text.sub"))
+      return service_item_subtext_get(si);
+
+   return NULL;
+}
+
+static Evas_Object *
+service_content_get(void *data, Evas_Object *obj, const char *part)
+{
+   Service_Item *si = data;
+   
+   if (!si)
+      return NULL;
+
+   if (!strcmp(part, "elm.swallow.icon"))
+     {
+        Evas_Object *icon;
+        void *data;
+        size_t size;
+
+        service_item_icon_data_get(si, &data, &size);
+
+        if (data && size > 0) {
+             icon = elm_icon_add(obj);
+             elm_icon_memfile_set(icon, data, size, "png", NULL);
+             return icon;
+        }
+        return NULL;
+     }
+   else if ((service_item_have_service(si) == EINA_TRUE) && !strcmp(part, "elm.swallow.end"))
+     {
+        Evas_Object *end = elm_check_add(obj);
+
+        elm_object_style_set(end, "ewebkit");
+        elm_object_part_text_set(end, "on", "ON");
+        elm_object_part_text_set(end, "off", "OFF");
+        elm_check_state_set(end, EINA_TRUE);
+        evas_object_smart_callback_add(end, "changed", on_service_item_change, si);
+
+        return end;
+     }
+
+   return NULL;
+}
+
+static Eina_Bool 
+service_state_get(void *data __UNUSED__, Evas_Object *obj __UNUSED__, const char *part __UNUSED__)
+{
+   return EINA_FALSE;
+}
+
+static void 
+service_del(void *data __UNUSED__, Evas_Object *obj __UNUSED__)
+{
+   service_item_free((Service_Item *)data);
+}
+
 Evas_Object *
 chrome_add(Browser_Window *win, const char *url, Session_Item *session_item)
 {
@@ -2565,6 +2856,13 @@ chrome_add(Browser_Window *win, const char *url, Session_Item *session_item)
    evas_object_smart_callback_add(more_index, "selected", index_selected, NULL);
    elm_object_style_set(more_index, "ewebkit");
 
+   Evas_Object *service_list = elm_genlist_add(ed);
+   evas_object_data_set(service_list, "chrome", chrome);
+   evas_object_data_set(chrome, "service-list", service_list);
+   elm_object_part_content_set(chrome, "service-list-swallow", service_list);
+   elm_object_style_set(service_list, "ewebkit");
+   elm_genlist_bounce_set(service_list, EINA_FALSE, EINA_FALSE);
+
    Evas_Object *tab_grid = elm_gengrid_add(ed);
    elm_object_style_set(tab_grid, "ewebkit");
    elm_gengrid_item_size_set(tab_grid, 140, 174);
@@ -2591,6 +2889,9 @@ chrome_add(Browser_Window *win, const char *url, Session_Item *session_item)
    edje_object_signal_callback_add(ed, "action,fav_on", "", on_fav_on, view);
    edje_object_signal_callback_add(ed, "action,fav_off", "", on_fav_off, view);
 
+   edje_object_signal_callback_add(ed, "action,nsd", "nsd", on_action_nsd, chrome);
+   edje_object_signal_callback_add(ed, "action,valid", "valid", on_action_valid, chrome);
+   
    edje_object_signal_callback_add(ed, "view,mask,hidden", "", on_view_mask_hidden, win);
 
    edje_object_signal_callback_add(ed, "more,show", "",
@@ -2619,6 +2920,16 @@ chrome_add(Browser_Window *win, const char *url, Session_Item *session_item)
                                   on_view_link_hover_out, chrome);
    evas_object_smart_callback_add(view, "popup,create", on_view_popup_new,
                                   win);
+   evas_object_smart_callback_add(view, "networkservices,request,started", 
+                                  on_view_networkservices_request_started, chrome);
+   evas_object_smart_callback_add(view, "networkservices,request,updated", 
+                                  on_view_networkservices_request_updated, chrome);
+   evas_object_smart_callback_add(view, "networkservices,request,canceled", 
+                                  on_view_networkservices_request_canceled, chrome);
+   evas_object_smart_callback_add(view, "networkservices,request,finished",
+                                  on_view_networkservices_request_finished, chrome);
+
+   edje_object_part_text_set(ed, "service-list-title", "Services");
 
    edje_object_signal_emit(ed, "panels,reset,hide", "");
    _chrome_state_apply(chrome, view);

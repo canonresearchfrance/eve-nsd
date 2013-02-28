@@ -62,6 +62,9 @@ AM_GNU_GETTEXT([external])
 PKG_CHECK_MODULES([EDBUS], [edbus2])
 PKG_CHECK_MODULES([ELEMENTARY], [elementary])
 PKG_CHECK_MODULES([EWEBKIT], [ewebkit ecore-file])
+PKG_CHECK_MODULES([XML], [libxml-2.0])
+PKG_CHECK_MODULES([SOUP], [libsoup-2.4 >= 2.26.1])
+PKG_CHECK_MODULES([GLIB_OBJECT], [libgobject-2.0])
 
 AC_ARG_WITH([edje-cc],
    [AC_HELP_STRING([--with-edje-cc=PATH],

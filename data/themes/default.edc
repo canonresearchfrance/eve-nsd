@@ -362,17 +362,25 @@ collections {
             image: "bt_fav_selected.png" COMP;
             image: "bt_more_normal.png" COMP;
             image: "bt_more_selected.png" COMP;
+            image: "bt_nsd_normal.png" COMP;
+            image: "bt_nsd_selected.png" COMP;
+            image: "bt_valid_normal.png" COMP;
+            image: "bt_valid_selected.png" COMP;
             image: "toolbar-background-bottom.png" COMP;
             image: "toolbar-background-top.png" COMP;
             image: "url-entry.png" COMP;
             image: "more-list-title.png" COMP;
             image: "more-list-back-button.png" COMP;
+            image: "service-list-title.png" COMP;
+            image: "service-list-refresh-button.png" COMP;
+            image: "service-list-cancel-button.png" COMP;
             image: "tab-header.png" COMP;
             image: "panel-top-triangle.png" COMP;
             image: "progress-bar-background.png" COMP;
         }
         script {
             public more_list_visible;
+            public service_list_visible;
             public tab_grid_visible;
             public favorited;
             public panel_top_visible;
@@ -384,6 +392,8 @@ collections {
             public button_stop_disabled;
             public button_tab_disabled;
             public button_more_disabled;
+            public button_nsd_disabled;
+            public button_valid_disabled;
 
             public fav_off() {
                 set_int(favorited, 0);
@@ -446,7 +456,7 @@ collections {
                 run_program(PROGRAM:"hide-tab-grid");
                 set_state(PART:"button-tab-selected", "default", 0.0);
                 set_int(tab_grid_visible, 0);
-                if (get_int(more_list_visible) != 1) {
+                if (get_int(more_list_visible) != 1 && get_int(service_list_visible) != 1) {
                     run_program(PROGRAM:"show-white-view-mask");
                     navigation_controls_show();
                 }
@@ -470,7 +480,7 @@ collections {
                 run_program(PROGRAM:"hide-more-list");
                 set_state(PART:"button-more-selected", "default", 0.0);
                 set_int(more_list_visible, 0);
-                if (get_int(tab_grid_visible) != 1) {
+                if (get_int(tab_grid_visible) != 1 && get_int(service_list_visible) != 1) {
                     run_program(PROGRAM:"show-white-view-mask");
                     navigation_controls_show();
                 }
@@ -479,6 +489,7 @@ collections {
             public more_list_show() {
                 set_int(more_list_visible, 1);
                 if (get_int(tab_grid_visible) == 1) tab_grid_hide();
+                if (get_int(service_list_visible) == 1) service_list_hide();
                 else navigation_controls_hide();
                 run_program(PROGRAM:"show-more-list");
                 set_state(PART:"button-more-selected", "visible", 0.0);
@@ -488,6 +499,29 @@ collections {
             public more_list_toggle() {
                 if (get_int(more_list_visible) == 1) more_list_hide();
                 else more_list_show();
+            }
+            public service_list_hide() {
+                run_program(PROGRAM:"hide-service-list");
+                run_program(PROGRAM:"valid-hide");
+                set_int(service_list_visible, 0);
+                if (get_int(more_list_visible) != 1 && get_int(tab_grid_visible) != 1) {
+                    run_program(PROGRAM:"show-white-view-mask");
+                    navigation_controls_show();
+                }
+            }
+            public service_list_show() {
+                set_int(service_list_visible, 1);
+                if (get_int(tab_grid_visible) == 1) tab_grid_hide();
+                if (get_int(more_list_visible) == 1) more_list_hide();
+                else navigation_controls_hide();
+                run_program(PROGRAM:"show-service-list");
+                set_state(PART:"button-valid-selected", "visible", 0.0);
+                run_program(PROGRAM:"valid-show-now");
+                run_program(PROGRAM:"show-black-view-mask");
+            }
+            public service_list_toggle() {
+                if (get_int(service_list_visible) == 1) service_list_hide();
+                else service_list_show();
             }
             public progress_bar_set_value(Float:value) {
                 if (value < 0.0) value = 0.0;
@@ -831,6 +865,267 @@ collections {
 
                 }
             }
+            part { name: "service-list-header";
+                type: IMAGE;
+                clip_to: "service-list";
+                description { state: "default" 0.0;
+                    max: 99999 55;
+                    rel1 {
+                        to: "service-list";
+                        relative: 0.0 0.0;
+                        offset: 0 0;
+                    }
+                    rel2 {
+                        to: "service-list";
+                        relative: 1.0 0.0;
+                        offset: -1 55;
+                    }
+                    image.normal: "service-list-title.png";
+                }
+            }
+            part { name: "service-list-refresh-button-text";
+                type: TEXT;
+                mouse_events: 0;
+                description { state: "default" 0.0;
+                    rel1 {
+                        to: "service-list-refresh-button";
+                        relative: 0.0 0.0;
+                        offset: 24 0;
+                    }
+                    rel2 {
+                        to: "service-list-refresh-button";
+                        relative: 1.0 1.0;
+                        offset: -1 -1;
+                    }
+                    text {
+                        font: "Sans,Edje-Vera";
+                        size: 9; /* 12 */
+                        text: "Refresh";
+                        min: 0 1;
+                        align: 0.0 0.5;
+                    }
+                    color: 130 130 130 255;
+                }
+                description { state: "pressed" 0.0;
+                    inherit: "default" 0.0;
+                }
+            }
+            part { name: "service-list-refresh-circle";
+                type: IMAGE;
+                mouse_events: 0;
+                description { state: "default" 0.0;
+                    min: 22 16;
+                    max: 22 16;
+                    fixed: 1 1;
+                    rel1 {
+                        to: "service-list-refresh-button";
+                        relative: 0.0 0.0;
+                        offset: 16 0;
+                    }
+                    rel2 {
+                        to: "service-list-refresh-button";
+                        relative: 0.0 1.0;
+                        offset: 0 -1;
+                    }
+                    image.normal: "service-list-refresh-button.png";
+                }
+                description { state: "pressed" 0.0;
+                    inherit: "default" 0.0;
+                }
+            }
+            part { name: "service-list-refresh-button";
+                type: RECT;
+                clip_to: "service-list"; 
+                description { state: "default" 0.0;
+                    rel1 {
+                        to_y: "service-list-header";
+                        to_x: "service-list-swallow";
+                        relative: 0.0 0.0;
+                        offset: 45 14;
+                    }
+                    rel2 {
+                        to_y: "service-list-header";
+                        to_x: "service-list-swallow";
+                        relative: 0.0 1.0;
+                        offset: 145 -2;
+                    }
+                    color: 0 0 0 0;
+                }
+                description { state: "hidden" 0.0;
+                    inherit: "default" 0.0;
+                    visible: 0;
+                    rel1 {
+                        to_y: "service-list-header";
+                        to_x: "service-list-swallow";
+                        relative: -1.0 0.0;
+                    }
+                    rel2 {
+                        to_y: "service-list-header";
+                        to_x: "service-list-swallow";
+                        relative: -1.0 1.0;
+                    }
+                }
+                description { state: "pressed" 0.0;
+                    inherit: "default" 0.0;
+                    color: 0 0 0 128;
+                }
+            }
+            part { name: "service-list-cancel-button-text";
+                type: TEXT;
+                mouse_events: 0;
+                description { state: "default" 0.0;
+                    rel1 {
+                        to: "service-list-cancel-button";
+                        relative: 0.0 0.0;
+                        offset: 13 0;
+                    }
+                    rel2 {
+                        to: "service-list-cancel-button";
+                        relative: 1.0 1.0;
+                        offset: -1 -1;
+                    }
+                    text {
+                        font: "Sans,Edje-Vera";
+                        size: 9; /* 12 */
+                        text: "Cancel";
+                        min: 0 1;
+                        align: 0.0 0.5;
+                    }
+                    color: 130 130 130 255;
+                }
+                description { state: "pressed" 0.0;
+                    inherit: "default" 0.0;
+                }
+            }
+            part { name: "service-list-cancel-cross";
+                type: IMAGE;
+                mouse_events: 0;
+                description { state: "default" 0.0;
+                    min: 16 16;
+                    max: 16 16;
+                    fixed: 1 1;
+                    rel1 {
+                        to: "service-list-cancel-button";
+                        relative: 1.0 0.0;
+                        offset: -16 0;
+                    }
+                    rel2 {
+                        to: "service-list-cancel-button";
+                        relative: 1.0 1.0;
+                        offset: -1 -1;
+                    }
+                    image.normal: "service-list-cancel-button.png";
+                }
+                description { state: "pressed" 0.0;
+                    inherit: "default" 0.0;
+                }
+            }
+            part { name: "service-list-cancel-button";
+                type: RECT;
+                clip_to: "service-list";
+                description { state: "default" 0.0;
+                    rel1 {
+                        to_y: "service-list-header";
+                        relative: 1.0 0.0;
+                        offset: -115 14;
+                    }
+                    rel2 {
+                        to_y: "service-list-header";
+                        relative: 1.0 1.0;
+                        offset: -45 -2;
+                    }
+                    color: 0 0 0 0;
+                }
+                description { state: "pressed" 0.0;
+                    inherit: "default" 0.0;
+                    color: 0 0 0 128;
+                }
+            }
+            part { name: "service-list-bg";
+                type: RECT;
+                description { state: "default" 0.0;
+                    rel1 {
+                        to: "service-list-header";
+                        relative: 0.0 1.0;
+                        offset: 0 0;
+                    }
+                    rel2 {
+                        to: "service-list";
+                        relative: 1.0 1.0;
+                        offset: -1 -1;
+                    }
+                    color: 0 0 0 255;
+                }
+            }
+            part { name: "service-list-swallow";
+                type: SWALLOW;
+                description { state: "default" 0.0;
+                    fixed: 1 1;
+                    rel1 {
+                        to: "service-list-header";
+                        relative: 0.0 1.0;
+                        offset: 0 -1;
+                    }
+                    rel2 {
+                        to: "service-list";
+                        relative: 1.0 1.0;
+                        offset: -10 -1;
+                    }
+                }
+            }
+            part { name: "service-list-title";
+                type: TEXT;
+                clip_to: "service-list";
+                description { state: "default" 0.0;
+                    rel1 {
+                        to_y: "service-list-header";
+                        to_x: "service-list-swallow";
+                        relative: 0.0 0.0;
+                        offset: 0 0;
+                    }
+                    rel2 {
+                        to_y: "service-list-header";
+                        to_x: "service-list-swallow";
+                        relative: 1.0 1.0;
+                        offset: -1 -1;
+                    }
+                    text {
+                        font: "Sans:style=Bold,Edje-Vera-Bold";
+                        size: 11;
+                        text: "Untitled";
+                        min: 0 1;
+                        align: 0.5 0.7;
+                    }
+                    color: 190 190 190 255;
+                }
+            }
+            part { name: "service-list";
+                type: RECT;
+                description { state: "default" 0.0;
+                    fixed: 1 1;
+                    visible: 0;
+                    rel1 {
+                        to_y: "panel-bottom";
+                        relative: 0.0 0.0;
+                        offset: 0 0;
+                    }
+                    rel2 {
+                        relative: 1.0 1.0;
+                        offset: -1 -1;
+                    }
+                }
+                description { state: "visible" 0.0;
+                    rel1 {
+                        relative: 0.0 0.25;
+                        offset: 0 0;
+                    }
+                    rel2 {
+                        to_y: "panel-bottom";
+                        relative: 1.0 0.0;
+                        offset: -1 5;
+                    }
+                }
+            }
             part { name: "tab-grid-swallow";
                 type: SWALLOW;
                 description { state: "default" 0.0;
@@ -1001,6 +1296,8 @@ collections {
             TOOLBAR_BUTTON("stop", "Stop", TOOLBAR_POSITION(3), button_stop_disabled)
             TOOLBAR_BUTTON("tab", "Tabs", TOOLBAR_POSITION(4), button_tab_disabled)
             TOOLBAR_BUTTON("more", "More", TOOLBAR_POSITION(5), button_more_disabled)
+            TOOLBAR_BUTTON("nsd", "Nsd", TOOLBAR_POSITION(6), button_nsd_disabled)
+            TOOLBAR_BUTTON("valid", "Valid", TOOLBAR_POSITION(6), button_valid_disabled)
             URLBAR_BUTTON("home", 0.0, 60)
             URLBAR_BUTTON("fav", 1.0, -URLBAR_ITEM_SIZE - 20)
             part { name: "button-more-right-separator";
@@ -1110,6 +1407,7 @@ collections {
                     signal: "load";
                     script {
                         set_int(more_list_visible, 0);
+                        set_int(service_list_visible, 0);
                         set_int(tab_grid_visible, 0);
                         set_int(favorited, 0);
                         set_int(panel_top_visible, 1);
@@ -1121,9 +1419,13 @@ collections {
                         set_int(button_reload_disabled, 0);
                         set_int(button_tab_disabled, 0);
                         set_int(button_more_disabled, 0);
+                        set_int(button_nsd_disabled, 1);
+                        set_int(button_valid_disabled, 1);
 
                         set_state(PART:"view-mask", "masking-white", 0.0);
                         run_program(PROGRAM:"addtab-hide");
+                        run_program(PROGRAM:"nsd-hide");
+                        run_program(PROGRAM:"valid-hide");
                     }
                 }
                 program { name: "list-back-clicked";
@@ -1137,6 +1439,8 @@ collections {
                     script {
                         if (get_int(more_list_visible) == 1) {
                             more_list_hide();
+                        } else if (get_int(service_list_visible) == 1) {
+                            service_list_hide();
                         } else if (get_int(tab_grid_visible) == 1) {
                             tab_grid_hide();
                         } else {
@@ -1220,6 +1524,53 @@ collections {
                     signal: "mouse,clicked,*";
                     source: "button-more-normal";
                     script { more_list_toggle(); }
+                }
+                program { name: "list-refresh-show";
+                    signal: "list,refresh,show";
+                    action: STATE_SET "default" 0.0;
+                    target: "service-list-refresh-button";
+                    transition: DECELERATE 0.3;
+                }
+                program { name: "list-refresh-hide";
+                    signal: "list,refresh,hide";
+                    action: STATE_SET "hidden" 0.0;
+                    target: "service-list-refresh-button";
+                    transition: ACCELERATE 0.5;
+                }
+                program { name: "list-refresh-clicked";
+                    signal: "mouse,clicked,*";
+                    source: "service-list-refresh-button";
+                    action: SIGNAL_EMIT "list,refresh,clicked" "";
+                }
+                program { name: "list-cancel-clicked";
+                    signal: "mouse,clicked,*";
+                    source: "service-list-cancel-button";
+                    action: SIGNAL_EMIT "list,cancel,clicked" "";
+                }
+                program { name: "show-service-button";
+                    signal: "show,service,button";
+                    script { run_program(PROGRAM:"nsd-show-now"); }
+                }
+                program { name: "hide-service-button";
+                    signal: "hide,service,button";
+                    script { 
+                        run_program(PROGRAM:"nsd-hide"); 
+                        service_list_hide();
+                    }
+                }
+                program { name: "show-service-list";
+                    action: STATE_SET "visible" 0.0;
+                    target: "service-list";
+                    transition: ACCELERATE 0.2;
+                }
+                program { name: "hide-service-list";
+                    action: STATE_SET "default" 0.0;
+                    target: "service-list";
+                    transition: DECELERATE 0.2;
+                }
+                program { name: "toggle-service-list";
+                    signal: "toggle,service";
+                    script { service_list_toggle(); }
                 }
                 program { name: "show-tab-grid";
                     action: STATE_SET "visible" 0.0;

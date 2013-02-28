@@ -9,6 +9,7 @@
 #include <EWebKit.h>
 
 #include "eve_state.h"
+#include "service.h"
 
 typedef struct _App                     App;
 typedef struct _Browser_Window          Browser_Window;
