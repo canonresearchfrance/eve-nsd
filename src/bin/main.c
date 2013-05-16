@@ -863,6 +863,9 @@ elm_main(int argc, char **argv)
           }
      }
 
+   if (getenv("http_proxy"))
+      ewk_network_proxy_uri_set(getenv("http_proxy"));
+
    tmp_uri = NULL;
    if (args < argc)
      {
