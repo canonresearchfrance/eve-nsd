@@ -47,6 +47,7 @@ images = \
     cur_glow.png \
     cur_shad.png \
     progress-bar-background.png \
+    arrow_down.png \
     arrow_right.png \
     toggle_bg.png  \
     toggle_off.png \

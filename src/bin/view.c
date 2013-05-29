@@ -1326,7 +1326,7 @@ _bt_close(void *data, Evas_Object *obj, void *event_info __UNUSED__)
 }
 
 static Eina_Bool
-_run_dialog(Evas_Object *parent, enum dialog_type type, const char *message, const char *default_entry_value, char **entry_value)
+_run_dialog(Evas_Object *parent, enum dialog_type type, const char *message, const char *default_entry_value, const char **entry_value)
 {
    EINA_SAFETY_ON_TRUE_RETURN_VAL((type != DIALOG_PROMPT) && (!!default_entry_value), EINA_FALSE);
    EINA_SAFETY_ON_TRUE_RETURN_VAL((type != DIALOG_PROMPT) && (!!entry_value), EINA_FALSE);
@@ -1441,7 +1441,7 @@ _view_smart_run_javascript_confirm(Ewk_View_Smart_Data *esd, Evas_Object *frame 
  *
  */
 static Eina_Bool
-_view_smart_run_javascript_prompt(Ewk_View_Smart_Data *esd, Evas_Object *frame __UNUSED__, const char *message, const char *default_value, char **value)
+_view_smart_run_javascript_prompt(Ewk_View_Smart_Data *esd, Evas_Object *frame __UNUSED__, const char *message, const char *default_value, const char **value)
 {
    View_Smart_Data *sd = (View_Smart_Data *)esd;
    Evas_Object *view = sd->base.self;
@@ -1513,16 +1513,8 @@ view_add(Evas_Object *parent, Backing_Store bs)
         static Ewk_View_Smart_Class api = EWK_VIEW_SMART_CLASS_INIT_NAME_VERSION("EWK_View_Demo");
 
         /* set current and parent apis to vanilla ewk_view_single methods */
-        if (bs == BACKING_STORE_TILED)
-          {
-             ewk_view_tiled_smart_set(&api);
-             ewk_view_tiled_smart_set(&_parent_sc);
-          }
-        else
-          {
-             ewk_view_single_smart_set(&api);
-             ewk_view_single_smart_set(&_parent_sc);
-          }
+        ewk_view_single_smart_set(&api);
+        ewk_view_single_smart_set(&_parent_sc);
 
         /* override methods we want custom behavior */
         api.sc.add = _view_smart_add;
@@ -1552,6 +1544,11 @@ view_add(Evas_Object *parent, Backing_Store bs)
      {
         ERR("Could not create smart object object for view");
         return NULL;
+     }
+
+   if (bs == BACKING_STORE_TILED)
+     {
+        ewk_view_setting_tiled_backing_store_enabled_set(view, EINA_TRUE);
      }
 
    return view;

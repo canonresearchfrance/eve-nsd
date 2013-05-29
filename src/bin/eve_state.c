@@ -18,6 +18,7 @@ struct _Config {
     unsigned char enable_plugins;
     unsigned char enable_private_mode;
     unsigned char enable_touch_interface;
+    unsigned char enable_auto_network_access;
     const char * home_page;
     const char * proxy;
     unsigned char restore_state;
@@ -25,9 +26,9 @@ struct _Config {
     unsigned char frame_flattening;
     int text_zoom;
     int minimum_font_size;
-    const char *__eet_filename;
     int cookie_policy;
     int backing_store;
+    const char *__eet_filename;
 };
 
 struct _Hist_Item {
@@ -70,14 +71,40 @@ struct _Session {
     const char *__eet_filename;
 };
 
+struct _Services {
+    const char * id;
+    const char * model;
+    const char * types;
+    Evas_Object * icon;
+    unsigned int icon__id;
+    unsigned char allowed;
+};
+
+struct _Device {
+    const char * url;
+    const char * friendly_name;
+    Evas_Object * icon;
+    unsigned int icon__id;
+    unsigned char allowed;
+    Eina_Hash * services;
+};
+
+struct _Network_Origin {
+    const char * origin;
+    Eina_List * devices;
+    Eina_Hash * services;
+};
+
+struct _Network {
+    Eina_List * origins;
+    const char *__eet_filename;
+};
+
 static const char CONFIG_ENTRY[] = "config";
-static const char HIST_ITEM_ENTRY[] = "hist_item";
 static const char HIST_ENTRY[] = "hist";
-static const char FAV_ITEM_ENTRY[] = "fav_item";
 static const char FAV_ENTRY[] = "fav";
-static const char SESSION_ITEM_ENTRY[] = "session_item";
-static const char SESSION_WINDOW_ENTRY[] = "session_window";
 static const char SESSION_ENTRY[] = "session";
+static const char NETWORK_ENTRY[] = "network";
 
 static Eet_Data_Descriptor *_config_descriptor = NULL;
 static Eet_Data_Descriptor *_hist_item_descriptor = NULL;
@@ -87,6 +114,12 @@ static Eet_Data_Descriptor *_fav_descriptor = NULL;
 static Eet_Data_Descriptor *_session_item_descriptor = NULL;
 static Eet_Data_Descriptor *_session_window_descriptor = NULL;
 static Eet_Data_Descriptor *_session_descriptor = NULL;
+static Eet_Data_Descriptor *_services_descriptor = NULL;
+static Eet_Data_Descriptor *_device_descriptor = NULL;
+static Eet_Data_Descriptor *_network_origin_descriptor = NULL;
+static Eet_Data_Descriptor *_network_descriptor = NULL;
+
+static unsigned int _images_id = 1;
 
 static inline void
 _config_init(void)
@@ -106,6 +139,7 @@ _config_init(void)
     EET_DATA_DESCRIPTOR_ADD_BASIC(_config_descriptor, Config, "enable_plugins", enable_plugins, EET_T_UCHAR);
     EET_DATA_DESCRIPTOR_ADD_BASIC(_config_descriptor, Config, "enable_private_mode", enable_private_mode, EET_T_UCHAR);
     EET_DATA_DESCRIPTOR_ADD_BASIC(_config_descriptor, Config, "enable_touch_interface", enable_touch_interface, EET_T_UCHAR);
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_config_descriptor, Config, "enable_auto_network_access", enable_auto_network_access, EET_T_UCHAR);
     EET_DATA_DESCRIPTOR_ADD_BASIC(_config_descriptor, Config, "home_page", home_page, EET_T_STRING);
     EET_DATA_DESCRIPTOR_ADD_BASIC(_config_descriptor, Config, "proxy", proxy, EET_T_STRING);
     EET_DATA_DESCRIPTOR_ADD_BASIC(_config_descriptor, Config, "restore_state", restore_state, EET_T_UCHAR);
@@ -126,7 +160,7 @@ _config_shutdown(void)
 }
 
 Config *
-config_new(unsigned char allow_popup, unsigned char enable_auto_load_images, unsigned char enable_auto_shrink_images, unsigned char enable_javascript, unsigned char enable_mouse_cursor, unsigned char enable_plugins, unsigned char enable_private_mode, unsigned char enable_touch_interface, const char * home_page, const char * proxy, unsigned char restore_state, const char * user_agent, unsigned char frame_flattening, int text_zoom, int minimum_font_size, int cookie_policy, int backing_store)
+config_new(unsigned char allow_popup, unsigned char enable_auto_load_images, unsigned char enable_auto_shrink_images, unsigned char enable_javascript, unsigned char enable_mouse_cursor, unsigned char enable_plugins, unsigned char enable_private_mode, unsigned char enable_touch_interface, unsigned char enable_auto_network_access, const char * home_page, const char * proxy, unsigned char restore_state, const char * user_agent, unsigned char frame_flattening, int text_zoom, int minimum_font_size, int cookie_policy, int backing_store)
 {
     Config *config = calloc(1, sizeof(Config));
 
@@ -144,6 +178,7 @@ config_new(unsigned char allow_popup, unsigned char enable_auto_load_images, uns
     config->enable_plugins = enable_plugins;
     config->enable_private_mode = enable_private_mode;
     config->enable_touch_interface = enable_touch_interface;
+    config->enable_auto_network_access = enable_auto_network_access;
     config->home_page = eina_stringshare_add(home_page ? home_page : "http://www.google.com");
     config->proxy = eina_stringshare_add(proxy);
     config->restore_state = restore_state;
@@ -178,7 +213,7 @@ config_allow_popup_set(Config *config, unsigned char allow_popup)
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->allow_popup = allow_popup;
 }
-  
+
 inline unsigned char
 config_enable_auto_load_images_get(const Config *config)
 {
@@ -191,7 +226,7 @@ config_enable_auto_load_images_set(Config *config, unsigned char enable_auto_loa
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->enable_auto_load_images = enable_auto_load_images;
 }
-  
+
 inline unsigned char
 config_enable_auto_shrink_images_get(const Config *config)
 {
@@ -204,7 +239,7 @@ config_enable_auto_shrink_images_set(Config *config, unsigned char enable_auto_s
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->enable_auto_shrink_images = enable_auto_shrink_images;
 }
-  
+
 inline unsigned char
 config_enable_javascript_get(const Config *config)
 {
@@ -217,7 +252,7 @@ config_enable_javascript_set(Config *config, unsigned char enable_javascript)
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->enable_javascript = enable_javascript;
 }
-  
+
 inline unsigned char
 config_enable_mouse_cursor_get(const Config *config)
 {
@@ -230,7 +265,7 @@ config_enable_mouse_cursor_set(Config *config, unsigned char enable_mouse_cursor
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->enable_mouse_cursor = enable_mouse_cursor;
 }
-  
+
 inline unsigned char
 config_enable_plugins_get(const Config *config)
 {
@@ -243,7 +278,7 @@ config_enable_plugins_set(Config *config, unsigned char enable_plugins)
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->enable_plugins = enable_plugins;
 }
-  
+
 inline unsigned char
 config_enable_private_mode_get(const Config *config)
 {
@@ -256,7 +291,7 @@ config_enable_private_mode_set(Config *config, unsigned char enable_private_mode
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->enable_private_mode = enable_private_mode;
 }
-  
+
 inline unsigned char
 config_enable_touch_interface_get(const Config *config)
 {
@@ -269,7 +304,20 @@ config_enable_touch_interface_set(Config *config, unsigned char enable_touch_int
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->enable_touch_interface = enable_touch_interface;
 }
-  
+
+inline unsigned char
+config_enable_auto_network_access_get(const Config *config)
+{
+    return config->enable_auto_network_access;
+}
+
+inline void
+config_enable_auto_network_access_set(Config *config, unsigned char enable_auto_network_access)
+{
+    EINA_SAFETY_ON_NULL_RETURN(config);
+    config->enable_auto_network_access = enable_auto_network_access;
+}
+
 inline const char *
 config_home_page_get(const Config *config)
 {
@@ -295,7 +343,7 @@ config_proxy_set(Config *config, const char *proxy)
     EINA_SAFETY_ON_NULL_RETURN(config);
     eina_stringshare_replace(&(config->proxy), proxy);
 }
-  
+
 inline unsigned char
 config_restore_state_get(const Config *config)
 {
@@ -308,7 +356,7 @@ config_restore_state_set(Config *config, unsigned char restore_state)
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->restore_state = restore_state;
 }
-  
+
 inline const char *
 config_user_agent_get(const Config *config)
 {
@@ -321,7 +369,7 @@ config_user_agent_set(Config *config, const char *user_agent)
     EINA_SAFETY_ON_NULL_RETURN(config);
     eina_stringshare_replace(&(config->user_agent), user_agent);
 }
-  
+
 inline unsigned char
 config_frame_flattening_get(const Config *config)
 {
@@ -334,7 +382,7 @@ config_frame_flattening_set(Config *config, unsigned char frame_flattening)
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->frame_flattening = frame_flattening;
 }
-  
+
 inline int
 config_text_zoom_get(const Config *config)
 {
@@ -347,7 +395,7 @@ config_text_zoom_set(Config *config, int text_zoom)
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->text_zoom = text_zoom;
 }
-  
+
 inline int
 config_minimum_font_size_get(const Config *config)
 {
@@ -386,7 +434,7 @@ config_backing_store_set(Config *config, int backing_store)
     EINA_SAFETY_ON_NULL_RETURN(config);
     config->backing_store = backing_store;
 }
-  
+
 Config *
 config_load(const char *filename)
 {
@@ -413,7 +461,7 @@ config_save(Config *config, const char *filename)
     Eet_File *ef;
     Eina_Bool ret;
 
-    if (filename) config->__eet_filename = eina_stringshare_add(filename);
+    if (filename) eina_stringshare_replace(&(config->__eet_filename), filename);
     else if (config->__eet_filename) filename = config->__eet_filename;
     else return EINA_FALSE;
 
@@ -493,7 +541,7 @@ hist_item_title_set(Hist_Item *hist_item, const char *title)
     EINA_SAFETY_ON_NULL_RETURN(hist_item);
     eina_stringshare_replace(&(hist_item->title), title);
 }
-  
+
 inline const char *
 hist_item_url_get(const Hist_Item *hist_item)
 {
@@ -506,7 +554,7 @@ hist_item_url_set(Hist_Item *hist_item, const char *url)
     EINA_SAFETY_ON_NULL_RETURN(hist_item);
     eina_stringshare_replace(&(hist_item->url), url);
 }
-  
+
 inline unsigned int
 hist_item_visit_count_get(const Hist_Item *hist_item)
 {
@@ -519,7 +567,7 @@ hist_item_visit_count_set(Hist_Item *hist_item, unsigned int visit_count)
     EINA_SAFETY_ON_NULL_RETURN(hist_item);
     hist_item->visit_count = visit_count;
 }
-  
+
 inline double
 hist_item_last_visit_get(const Hist_Item *hist_item)
 {
@@ -532,7 +580,7 @@ hist_item_last_visit_set(Hist_Item *hist_item, double last_visit)
     EINA_SAFETY_ON_NULL_RETURN(hist_item);
     hist_item->last_visit = last_visit;
 }
-  
+
 
 static inline void
 _hist_init(void)
@@ -574,7 +622,7 @@ hist_new()
 void
 hist_free(Hist *hist)
 {
-    eina_hash_free(hist->items);
+    if (hist->items) eina_hash_free(hist->items);
     free(hist);
 }
 
@@ -641,7 +689,7 @@ hist_save(Hist *hist, const char *filename)
     Eet_File *ef;
     Eina_Bool ret;
 
-    if (filename) hist->__eet_filename = eina_stringshare_add(filename);
+    if (filename) eina_stringshare_replace(&(hist->__eet_filename), filename);
     else if (hist->__eet_filename) filename = hist->__eet_filename;
     else return EINA_FALSE;
 
@@ -719,7 +767,7 @@ fav_item_url_set(Fav_Item *fav_item, const char *url)
     EINA_SAFETY_ON_NULL_RETURN(fav_item);
     eina_stringshare_replace(&(fav_item->url), url);
 }
-  
+
 inline const char *
 fav_item_title_get(const Fav_Item *fav_item)
 {
@@ -732,7 +780,7 @@ fav_item_title_set(Fav_Item *fav_item, const char *title)
     EINA_SAFETY_ON_NULL_RETURN(fav_item);
     eina_stringshare_replace(&(fav_item->title), title);
 }
-  
+
 inline unsigned int
 fav_item_visit_count_get(const Fav_Item *fav_item)
 {
@@ -745,7 +793,7 @@ fav_item_visit_count_set(Fav_Item *fav_item, unsigned int visit_count)
     EINA_SAFETY_ON_NULL_RETURN(fav_item);
     fav_item->visit_count = visit_count;
 }
-  
+
 
 static inline void
 _fav_init(void)
@@ -787,7 +835,7 @@ fav_new()
 void
 fav_free(Fav *fav)
 {
-    eina_hash_free(fav->items);
+    if (fav->items) eina_hash_free(fav->items);
     free(fav);
 }
 
@@ -854,7 +902,7 @@ fav_save(Fav *fav, const char *filename)
     Eet_File *ef;
     Eina_Bool ret;
 
-    if (filename) fav->__eet_filename = eina_stringshare_add(filename);
+    if (filename) eina_stringshare_replace(&(fav->__eet_filename), filename);
     else if (fav->__eet_filename) filename = fav->__eet_filename;
     else return EINA_FALSE;
 
@@ -933,7 +981,7 @@ session_item_url_set(Session_Item *session_item, const char *url)
     EINA_SAFETY_ON_NULL_RETURN(session_item);
     eina_stringshare_replace(&(session_item->url), url);
 }
-  
+
 inline unsigned char
 session_item_focused_get(const Session_Item *session_item)
 {
@@ -946,7 +994,7 @@ session_item_focused_set(Session_Item *session_item, unsigned char focused)
     EINA_SAFETY_ON_NULL_RETURN(session_item);
     session_item->focused = focused;
 }
-  
+
 inline int
 session_item_scroll_x_get(const Session_Item *session_item)
 {
@@ -959,7 +1007,7 @@ session_item_scroll_x_set(Session_Item *session_item, int scroll_x)
     EINA_SAFETY_ON_NULL_RETURN(session_item);
     session_item->scroll_x = scroll_x;
 }
-  
+
 inline int
 session_item_scroll_y_get(const Session_Item *session_item)
 {
@@ -972,7 +1020,7 @@ session_item_scroll_y_set(Session_Item *session_item, int scroll_y)
     EINA_SAFETY_ON_NULL_RETURN(session_item);
     session_item->scroll_y = scroll_y;
 }
-  
+
 
 static inline void
 _session_window_init(void)
@@ -1087,7 +1135,7 @@ session_window_focused_set(Session_Window *session_window, unsigned char focused
     EINA_SAFETY_ON_NULL_RETURN(session_window);
     session_window->focused = focused;
 }
-  
+
 
 static inline void
 _session_init(void)
@@ -1214,7 +1262,7 @@ session_save(Session *session, const char *filename)
     Eet_File *ef;
     Eina_Bool ret;
 
-    if (filename) session->__eet_filename = eina_stringshare_add(filename);
+    if (filename) eina_stringshare_replace(&(session->__eet_filename), filename);
     else if (session->__eet_filename) filename = session->__eet_filename;
     else return EINA_FALSE;
 
@@ -1231,6 +1279,717 @@ session_save(Session *session, const char *filename)
     return ret;
 }
 
+static inline void
+_services_init(void)
+{
+    Eet_Data_Descriptor_Class eddc;
+
+    if (_services_descriptor) return;
+
+    EET_EINA_STREAM_DATA_DESCRIPTOR_CLASS_SET(&eddc, Services);
+    _services_descriptor = eet_data_descriptor_stream_new(&eddc);
+
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_services_descriptor, Services, "id", id, EET_T_STRING);
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_services_descriptor, Services, "model", model, EET_T_STRING);
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_services_descriptor, Services, "types", types, EET_T_STRING);
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_services_descriptor, Services, "icon__id", icon__id, EET_T_UINT);
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_services_descriptor, Services, "allowed", allowed, EET_T_UCHAR);
+}
+
+static inline void
+_services_shutdown(void)
+{
+    if (!_services_descriptor) return;
+    eet_data_descriptor_free(_services_descriptor);
+    _services_descriptor = NULL;
+}
+
+Services *
+services_new(const char * id, const char * model, const char * types, Evas_Object * icon, unsigned char allowed)
+{
+    Services *services = calloc(1, sizeof(Services));
+
+    if (!services)
+       {
+          fprintf(stderr, "ERROR: could not calloc Services\n");
+          return NULL;
+       }
+
+    services->id = eina_stringshare_add(id);
+    services->model = eina_stringshare_add(model);
+    services->types = eina_stringshare_add(types);
+    services->icon = icon;
+    services->icon__id = 0;
+    services->allowed = allowed;
+
+    return services;
+}
+
+void
+services_free(Services *services)
+{
+    eina_stringshare_del(services->id);
+    eina_stringshare_del(services->model);
+    eina_stringshare_del(services->types);
+    if (services->icon) evas_object_del(services->icon);
+    free(services);
+}
+
+static void 
+_services_icon_freed(void *data, Evas *e, Evas_Object *obj, void *event_info)
+{
+    Services *services = data;
+    services->icon__id = 0;
+    services->icon = NULL;
+}
+
+static void
+_load_services_images(Services *services, Evas *evas, const char *filename)
+{
+    Eet_File *ef = eet_open(filename, EET_FILE_MODE_READ);
+    if (!ef)
+       {
+          fprintf(stderr, "ERROR: could not open '%s' for read\n", filename);
+          return;
+       }
+
+    if (services->icon__id)
+       {
+          char icon_buf[256];
+          unsigned int icon_w, icon_h;
+          int icon_alpha, icon_compress, icon_quality, icon_lossy;
+          void *icon_data;
+          sprintf(icon_buf, "/image/%d", services->icon__id);
+          icon_data = eet_data_image_read(ef, icon_buf, &icon_w, &icon_h, &icon_alpha, &icon_compress, &icon_quality, &icon_lossy);
+          if (icon_data)
+             {
+                services->icon = evas_object_image_add(evas);
+                evas_object_image_size_set(services->icon, icon_w, icon_h);
+                evas_object_image_alpha_set(services->icon, icon_alpha);
+                evas_object_image_data_set(services->icon, icon_data);
+                evas_object_event_callback_add(services->icon, EVAS_CALLBACK_FREE, _services_icon_freed, services);
+             }
+       }
+
+    eet_close(ef);
+}
+
+static int
+_write_services_images(Services *services, Eet_File *ef, int image_id)
+{
+    if (services->icon)
+       {
+          char icon_buf[256];
+          int icon_w, icon_h;
+          int icon_alpha;
+          void *icon_data;
+          services->icon__id = image_id;
+          sprintf(icon_buf, "/image/%d", image_id++);
+          evas_object_image_size_get(services->icon, &icon_w, &icon_h);
+          icon_alpha = evas_object_image_alpha_get(services->icon);
+          icon_data = evas_object_image_data_get(services->icon, EINA_FALSE);
+          eet_data_image_write(ef, icon_buf, icon_data, icon_w, icon_h, icon_alpha, 1, 95, 0);
+       }
+    return image_id;
+}
+
+inline const char *
+services_id_get(const Services *services)
+{
+    return services->id;
+}
+
+inline void
+services_id_set(Services *services, const char *id)
+{
+    EINA_SAFETY_ON_NULL_RETURN(services);
+    eina_stringshare_replace(&(services->id), id);
+}
+
+inline const char *
+services_model_get(const Services *services)
+{
+    return services->model;
+}
+
+inline void
+services_model_set(Services *services, const char *model)
+{
+    EINA_SAFETY_ON_NULL_RETURN(services);
+    eina_stringshare_replace(&(services->model), model);
+}
+
+inline const char *
+services_types_get(const Services *services)
+{
+    return services->types;
+}
+
+inline void
+services_types_set(Services *services, const char *types)
+{
+    EINA_SAFETY_ON_NULL_RETURN(services);
+    eina_stringshare_replace(&(services->types), types);
+}
+
+void
+services_icon_set(Services *services, Evas_Object *icon)
+{
+    EINA_SAFETY_ON_NULL_RETURN(services);
+    if (services->icon) evas_object_del(services->icon);
+    services->icon__id = 0;
+    services->icon = icon;
+    evas_object_event_callback_add(icon, EVAS_CALLBACK_FREE, _services_icon_freed, services);
+}
+
+Evas_Object *
+services_icon_get(Services *services, Evas *evas, const char *eet_file)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(services, NULL);
+    if (services->icon) return services->icon;
+    _load_services_images(services, evas, eet_file);
+    return services->icon;
+}
+
+inline unsigned char
+services_allowed_get(const Services *services)
+{
+    return services->allowed;
+}
+
+inline void
+services_allowed_set(Services *services, unsigned char allowed)
+{
+    EINA_SAFETY_ON_NULL_RETURN(services);
+    services->allowed = allowed;
+}
+
+
+static inline void
+_device_init(void)
+{
+    Eet_Data_Descriptor_Class eddc;
+
+    if (_device_descriptor) return;
+
+    EET_EINA_STREAM_DATA_DESCRIPTOR_CLASS_SET(&eddc, Device);
+    _device_descriptor = eet_data_descriptor_stream_new(&eddc);
+
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_device_descriptor, Device, "url", url, EET_T_STRING);
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_device_descriptor, Device, "friendly_name", friendly_name, EET_T_STRING);
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_device_descriptor, Device, "icon__id", icon__id, EET_T_UINT);
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_device_descriptor, Device, "allowed", allowed, EET_T_UCHAR);
+    EET_DATA_DESCRIPTOR_ADD_HASH(_device_descriptor, Device, "services", services, _services_descriptor);
+}
+
+static inline void
+_device_shutdown(void)
+{
+    if (!_device_descriptor) return;
+    eet_data_descriptor_free(_device_descriptor);
+    _device_descriptor = NULL;
+}
+
+Device *
+device_new(const char * url, const char * friendly_name, Evas_Object * icon, unsigned char allowed)
+{
+    Device *device = calloc(1, sizeof(Device));
+
+    if (!device)
+       {
+          fprintf(stderr, "ERROR: could not calloc Device\n");
+          return NULL;
+       }
+
+    device->url = eina_stringshare_add(url);
+    device->friendly_name = eina_stringshare_add(friendly_name);
+    device->icon = icon;
+    device->icon__id = 0;
+    device->allowed = allowed;
+    device->services = eina_hash_stringshared_new(EINA_FREE_CB(services_free));
+
+    return device;
+}
+
+void
+device_free(Device *device)
+{
+    eina_stringshare_del(device->url);
+    eina_stringshare_del(device->friendly_name);
+    if (device->icon) evas_object_del(device->icon);
+    if (device->services) eina_hash_free(device->services);
+    free(device);
+}
+
+static void 
+_device_icon_freed(void *data, Evas *e, Evas_Object *obj, void *event_info)
+{
+    Device *device = data;
+    device->icon__id = 0;
+    device->icon = NULL;
+}
+
+static void
+_load_device_images(Device *device, Evas *evas, const char *filename)
+{
+    Eet_File *ef = eet_open(filename, EET_FILE_MODE_READ);
+    if (!ef)
+       {
+          fprintf(stderr, "ERROR: could not open '%s' for read\n", filename);
+          return;
+       }
+
+    if (device->icon__id)
+       {
+          char icon_buf[256];
+          unsigned int icon_w, icon_h;
+          int icon_alpha, icon_compress, icon_quality, icon_lossy;
+          void *icon_data;
+          sprintf(icon_buf, "/image/%d", device->icon__id);
+          icon_data = eet_data_image_read(ef, icon_buf, &icon_w, &icon_h, &icon_alpha, &icon_compress, &icon_quality, &icon_lossy);
+          if (icon_data)
+             {
+                device->icon = evas_object_image_add(evas);
+                evas_object_image_size_set(device->icon, icon_w, icon_h);
+                evas_object_image_alpha_set(device->icon, icon_alpha);
+                evas_object_image_data_set(device->icon, icon_data);
+                evas_object_event_callback_add(device->icon, EVAS_CALLBACK_FREE, _device_icon_freed, device);
+             }
+       }
+
+    eet_close(ef);
+}
+
+static int
+_write_device_images(Device *device, Eet_File *ef, int image_id)
+{
+    if (device->icon)
+       {
+          char icon_buf[256];
+          int icon_w, icon_h;
+          int icon_alpha;
+          void *icon_data;
+          device->icon__id = image_id;
+          sprintf(icon_buf, "/image/%d", image_id++);
+          evas_object_image_size_get(device->icon, &icon_w, &icon_h);
+          icon_alpha = evas_object_image_alpha_get(device->icon);
+          icon_data = evas_object_image_data_get(device->icon, EINA_FALSE);
+          eet_data_image_write(ef, icon_buf, icon_data, icon_w, icon_h, icon_alpha, 1, 95, 0);
+       }
+    return image_id;
+}
+
+inline const char *
+device_url_get(const Device *device)
+{
+    return device->url;
+}
+
+inline void
+device_url_set(Device *device, const char *url)
+{
+    EINA_SAFETY_ON_NULL_RETURN(device);
+    eina_stringshare_replace(&(device->url), url);
+}
+
+inline const char *
+device_friendly_name_get(const Device *device)
+{
+    return device->friendly_name;
+}
+
+  inline void
+device_friendly_name_set(Device *device, const char *friendly_name)
+{
+    EINA_SAFETY_ON_NULL_RETURN(device);
+    eina_stringshare_replace(&(device->friendly_name), friendly_name);
+}
+
+void device_icon_set(Device *device, Evas_Object *icon)
+{
+    EINA_SAFETY_ON_NULL_RETURN(device);
+    if (device->icon) evas_object_del(device->icon);
+    device->icon__id = 0;
+    device->icon = icon;
+    evas_object_event_callback_add(icon, EVAS_CALLBACK_FREE, _device_icon_freed, device);
+}
+
+Evas_Object *device_icon_get(Device *device, Evas *evas, const char *eet_file)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(device, NULL);
+    if (device->icon) return device->icon;
+    _load_device_images(device, evas, eet_file);
+    return device->icon;
+}
+
+inline unsigned char
+device_allowed_get(const Device *device)
+{
+    return device->allowed;
+}
+
+inline void 
+device_allowed_set(Device *device, unsigned char allowed)
+{
+    EINA_SAFETY_ON_NULL_RETURN(device);
+    device->allowed = allowed;
+}
+
+void
+device_services_add(Device *device, const char * id, Services *services)
+{
+    EINA_SAFETY_ON_NULL_RETURN(device);
+    eina_hash_add(device->services, id, services);
+}
+
+void
+device_services_del(Device *device, const char * id)
+{
+    EINA_SAFETY_ON_NULL_RETURN(device);
+    eina_hash_del(device->services, id, NULL);
+}
+
+inline Services *
+device_services_get(const Device *device, const char * id)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(device, NULL);
+    return eina_hash_find(device->services, id);
+}
+
+inline Eina_Hash *
+device_services_hash_get(const Device *device)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(device, NULL);
+    return device->services;
+}
+
+void
+device_services_modify(Device *device, const char * key, void *value)
+{
+    EINA_SAFETY_ON_NULL_RETURN(device);
+    eina_hash_modify(device->services, key, value);
+}
+
+
+static inline void
+_network_origin_init(void)
+{
+    Eet_Data_Descriptor_Class eddc;
+
+    if (_network_origin_descriptor) return;
+
+    EET_EINA_STREAM_DATA_DESCRIPTOR_CLASS_SET(&eddc, Network_Origin);
+    _network_origin_descriptor = eet_data_descriptor_stream_new(&eddc);
+
+    EET_DATA_DESCRIPTOR_ADD_BASIC(_network_origin_descriptor, Network_Origin, "origin", origin, EET_T_STRING);
+    EET_DATA_DESCRIPTOR_ADD_LIST(_network_origin_descriptor, Network_Origin, "devices", devices, _device_descriptor);
+    EET_DATA_DESCRIPTOR_ADD_HASH(_network_origin_descriptor, Network_Origin, "services", services, _services_descriptor);
+}
+
+static inline void
+_network_origin_shutdown(void)
+{
+    if (!_network_origin_descriptor) return;
+    eet_data_descriptor_free(_network_origin_descriptor);
+    _network_origin_descriptor = NULL;
+}
+
+Network_Origin *
+network_origin_new(const char * origin, Eina_List * devices)
+{
+    Network_Origin *network_origin = calloc(1, sizeof(Network_Origin));
+
+    if (!network_origin)
+       {
+          fprintf(stderr, "ERROR: could not calloc Network_Origin\n");
+          return NULL;
+       }
+
+    network_origin->origin = eina_stringshare_add(origin);
+    network_origin->devices = devices;
+    network_origin->services = eina_hash_stringshared_new(EINA_FREE_CB(services_free));
+
+    return network_origin;
+}
+
+void
+network_origin_free(Network_Origin *network_origin)
+{
+    eina_stringshare_del(network_origin->origin);
+    if (network_origin->devices)
+       {
+          Device *devices_elem;
+          EINA_LIST_FREE(network_origin->devices, devices_elem)
+             device_free(devices_elem);
+       }
+    free(network_origin);
+}
+
+inline const char *
+network_origin_origin_get(const Network_Origin *network_origin)
+{
+    return network_origin->origin;
+}
+
+inline void
+network_origin_origin_set(Network_Origin *network_origin, const char *origin)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network_origin);
+    eina_stringshare_replace(&(network_origin->origin), origin);
+}
+
+void
+network_origin_devices_add(Network_Origin *network_origin, Device *device)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network_origin);
+    network_origin->devices = eina_list_append(network_origin->devices, device);
+}
+
+void
+network_origin_devices_del(Network_Origin *network_origin, Device *device)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network_origin);
+    network_origin->devices = eina_list_remove(network_origin->devices, device);
+}
+
+inline Device *
+network_origin_devices_get(const Network_Origin *network_origin, unsigned int nth)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(network_origin, NULL);
+    return eina_list_nth(network_origin->devices, nth);
+}
+
+inline unsigned int
+network_origin_devices_count(const Network_Origin *network_origin)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(network_origin, 0);
+    return eina_list_count(network_origin->devices);
+}
+
+void
+network_origin_devices_list_clear(Network_Origin *network_origin)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network_origin);
+    Device *data;
+    EINA_LIST_FREE(network_origin->devices, data) device_free(data);
+}
+
+inline Eina_List *
+network_origin_devices_list_get(const Network_Origin *network_origin)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(network_origin, NULL);
+    return network_origin->devices;
+}
+
+inline void
+network_origin_devices_list_set(Network_Origin *network_origin, Eina_List *list)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network_origin);
+    network_origin->devices = list;
+}
+
+void
+network_origin_services_add(Network_Origin *network_origin, const char * id, Services *services)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network_origin);
+    eina_hash_add(network_origin->services, id, services);
+}
+
+void
+network_origin_services_del(Network_Origin *network_origin, const char * id)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network_origin);
+    eina_hash_del(network_origin->services, id, NULL);
+}
+
+inline Services *
+network_origin_services_get(const Network_Origin *network_origin, const char * id)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(network_origin, NULL);
+    return eina_hash_find(network_origin->services, id);
+}
+
+inline Eina_Hash *
+network_origin_services_hash_get(const Network_Origin *network_origin)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(network_origin, NULL);
+    return network_origin->services;
+}
+
+void
+network_origin_services_modify(Network_Origin *network_origin, const char * key, void *value)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network_origin);
+    eina_hash_modify(network_origin->services, key, value);
+}
+
+static inline void
+_network_init(void)
+{
+    Eet_Data_Descriptor_Class eddc;
+
+    if (_network_descriptor) return;
+
+    EET_EINA_STREAM_DATA_DESCRIPTOR_CLASS_SET(&eddc, Network);
+    _network_descriptor = eet_data_descriptor_stream_new(&eddc);
+
+    EET_DATA_DESCRIPTOR_ADD_LIST(_network_descriptor, Network, "origins", origins, _network_origin_descriptor);
+}
+
+static inline void
+_network_shutdown(void)
+{
+    if (!_network_descriptor) return;
+    eet_data_descriptor_free(_network_descriptor);
+    _network_descriptor = NULL;
+}
+
+Network *
+network_new(Eina_List * origins)
+{
+    Network *network = calloc(1, sizeof(Network));
+
+    if (!network)
+       {
+          fprintf(stderr, "ERROR: could not calloc Network\n");
+          return NULL;
+       }
+
+    network->origins = origins;
+
+    return network;
+}
+
+void
+network_free(Network *network)
+{
+    if (network->origins)
+       {
+          Network_Origin *origins_elem;
+          EINA_LIST_FREE(network->origins, origins_elem)
+             network_origin_free(origins_elem);
+       }
+    free(network);
+}
+
+inline void
+network_origins_add(Network *network, Network_Origin *network_origin)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network);
+    network->origins = eina_list_append(network->origins, network_origin);
+}
+
+inline void
+network_origins_del(Network *network, Network_Origin *network_origin)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network);
+    network->origins = eina_list_remove(network->origins, network_origin);
+}
+
+inline Network_Origin *
+network_origins_get(const Network *network, unsigned int nth)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(network, NULL);
+    return eina_list_nth(network->origins, nth);
+}
+
+inline unsigned int
+network_origins_count(const Network *network)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(network, 0);
+    return eina_list_count(network->origins);
+}
+
+void
+network_origins_list_clear(Network *network)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network);
+    Network_Origin *data;
+    EINA_LIST_FREE(network->origins, data) network_origin_free(data);
+}
+
+inline Eina_List *
+network_origins_list_get(const Network *network)
+{
+    EINA_SAFETY_ON_NULL_RETURN_VAL(network, NULL);
+    return network->origins;
+}
+
+inline void
+network_origins_list_set(Network *network, Eina_List *list)
+{
+    EINA_SAFETY_ON_NULL_RETURN(network);
+    network->origins = list;
+}
+
+Network *
+network_load(const char *filename)
+{
+    Network *network = NULL;
+    Eet_File *ef = eet_open(filename, EET_FILE_MODE_READ);
+    if (!ef)
+      {
+        fprintf(stderr, "ERROR: could not open '%s' for read\n", filename);
+        return NULL;
+      }
+
+    network = eet_data_read(ef, _network_descriptor, NETWORK_ENTRY);
+    if (!network) goto end;
+    network->__eet_filename = eina_stringshare_add(filename);
+
+end:
+    eet_close(ef);
+    return network;
+}
+
+Eina_Bool
+network_save(Network *network, const char *filename)
+{
+    Eet_File *ef;
+    Eina_Bool ret;
+
+    if (filename) eina_stringshare_replace(&(network->__eet_filename), filename);
+    else if (network->__eet_filename) filename = network->__eet_filename;
+    else return EINA_FALSE;
+
+    ef = eet_open(filename, EET_FILE_MODE_READ_WRITE);
+    if (!ef)
+       {
+          fprintf(stderr, "ERROR: could not open '%s' for write\n", filename);
+          return EINA_FALSE;
+       }
+
+    if (network->origins)
+       {
+          Network_Origin *origins;
+          Eina_List *origins_list;
+          EINA_LIST_FOREACH(network->origins, origins_list, origins)
+             {
+                 Device *devices;
+                 Eina_List *devices_list;
+
+                 EINA_LIST_FOREACH(origins->devices, devices_list, devices)
+                    {
+                        Eina_Iterator *services_itr = eina_hash_iterator_key_new(devices->services);
+                        char *service_id;
+
+                        _images_id = _write_device_images(devices, ef, _images_id);
+
+                        EINA_ITERATOR_FOREACH(services_itr, service_id)
+                           {
+                               Services *services = device_services_get(devices, service_id);
+                               _images_id = _write_services_images(services, ef, _images_id);
+                           }
+                    }
+             }
+       }
+    
+    ret = !!eet_data_write(ef, _network_descriptor, NETWORK_ENTRY, network, EINA_TRUE);
+    eet_close(ef);
+
+    return ret;
+}
+
 void
 eve_state_init(void)
 {
@@ -1242,6 +2001,10 @@ eve_state_init(void)
     _session_item_init();
     _session_window_init();
     _session_init();
+    _services_init();
+    _device_init();
+    _network_origin_init();
+    _network_init();
 }
 
 void
@@ -1255,5 +2018,9 @@ eve_state_shutdown(void)
     _session_item_shutdown();
     _session_window_shutdown();
     _session_shutdown();
+    _services_shutdown();
+    _device_shutdown();
+    _network_origin_shutdown();
+    _network_shutdown();
 }
 

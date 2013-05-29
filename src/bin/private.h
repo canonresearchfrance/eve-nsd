@@ -19,6 +19,7 @@ extern int _log_domain;
 extern Hist *hist;
 extern Fav *fav;
 extern Config *config;
+extern Network *network;
 extern App app;
 
 #define CRITICAL(...) EINA_LOG_DOM_CRIT(_log_domain, __VA_ARGS__)

@@ -6,6 +6,7 @@
 
 #include <Eina.h>
 #include <Eet.h>
+#include <Evas.h>
 
 typedef struct _Config Config;
 typedef struct _Hist_Item Hist_Item;
@@ -15,9 +16,13 @@ typedef struct _Fav Fav;
 typedef struct _Session_Item Session_Item;
 typedef struct _Session_Window Session_Window;
 typedef struct _Session Session;
+typedef struct _Services Services;
+typedef struct _Device Device;
+typedef struct _Network_Origin Network_Origin;
+typedef struct _Network Network;
 
 /* Config */
-Config *config_new(unsigned char allow_popup, unsigned char enable_auto_load_images, unsigned char enable_auto_shrink_images, unsigned char enable_javascript, unsigned char enable_mouse_cursor, unsigned char enable_plugins, unsigned char enable_private_mode, unsigned char enable_touch_interface, const char * home_page, const char * proxy, unsigned char restore_state, const char * user_agent, unsigned char frame_flattening, int text_zoom, int minimum_font_size, int cookie_policy, int backing_store);
+Config *config_new(unsigned char allow_popup, unsigned char enable_auto_load_images, unsigned char enable_auto_shrink_images, unsigned char enable_javascript, unsigned char enable_mouse_cursor, unsigned char enable_plugins, unsigned char enable_private_mode, unsigned char enable_touch_interface, unsigned char enable_auto_network_access, const char * home_page, const char * proxy, unsigned char restore_state, const char * user_agent, unsigned char frame_flattening, int text_zoom, int minimum_font_size, int cookie_policy, int backing_store);
 void config_free(Config *config);
 
 void config_allow_popup_set(Config *config, unsigned char allow_popup);
@@ -36,6 +41,8 @@ void config_enable_private_mode_set(Config *config, unsigned char enable_private
 unsigned char config_enable_private_mode_get(const Config *config);
 void config_enable_touch_interface_set(Config *config, unsigned char enable_touch_interface);
 unsigned char config_enable_touch_interface_get(const Config *config);
+void config_enable_auto_network_access_set(Config *config, unsigned char enable_auto_network_access);
+unsigned char config_enable_auto_network_access_get(const Config *config);
 void config_home_page_set(Config *config, const char * home_page);
 const char * config_home_page_get(const Config *config);
 void config_proxy_set(Config *config, const char * proxy);
@@ -149,6 +156,74 @@ void session_windows_list_set(Session *session, Eina_List *list);
 
 Session *session_load(const char *filename);
 Eina_Bool session_save(Session *session, const char *filename);
+
+/* Services */
+Services *services_new(const char * id, const char * model, const char * types, Evas_Object * icon, unsigned char allowed);
+void services_free(Services *services);
+
+void services_id_set(Services *services, const char * id);
+const char * services_id_get(const Services *services);
+void services_model_set(Services *services, const char * model);
+const char * services_model_get(const Services *services);
+void services_types_set(Services *services, const char * types);
+const char * services_types_get(const Services *services);
+void services_icon_set(Services *services, Evas_Object *icon);
+Evas_Object *services_icon_get(Services *services, Evas *evas, const char *eet_file);
+void services_allowed_set(Services *services, unsigned char allowed);
+unsigned char services_allowed_get(const Services *services);
+
+/* Device */
+Device *device_new(const char * url, const char * friendly_name, Evas_Object * icon, unsigned char allowed);
+void device_free(Device *device);
+
+void device_url_set(Device *device, const char * url);
+const char * device_url_get(const Device *device);
+void device_friendly_name_set(Device *device, const char * friendly_name);
+const char * device_friendly_name_get(const Device *device);
+void device_icon_set(Device *device, Evas_Object *icon);
+Evas_Object *device_icon_get(Device *device, Evas *evas, const char *eet_file);
+void device_allowed_set(Device *device, unsigned char allowed);
+unsigned char device_allowed_get(const Device *device);
+void device_services_add(Device *device, const char * id, Services *services);
+void device_services_del(Device *device, const char * id);
+Services *device_services_get(const Device *device, const char * key);
+Eina_Hash *device_services_hash_get(const Device *device);
+void device_services_modify(Device *device, const char * key, void *value);
+
+/* Network_Origin */
+Network_Origin *network_origin_new(const char * origin, Eina_List * devices);
+void network_origin_free(Network_Origin *network_origin);
+
+void network_origin_origin_set(Network_Origin *network_origin, const char * origin);
+const char * network_origin_origin_get(const Network_Origin *network_origin);
+void network_origin_devices_add(Network_Origin *network_origin, Device *device);
+void network_origin_devices_del(Network_Origin *network_origin, Device *device);
+Device *network_origin_devices_get(const Network_Origin *network_origin, unsigned int nth);
+unsigned int network_origin_devices_count(const Network_Origin *network_origin);
+Eina_List *network_origin_devices_list_get(const Network_Origin *network_origin);
+void network_origin_devices_list_clear(Network_Origin *network_origin);
+void network_origin_devices_list_set(Network_Origin *network_origin, Eina_List *list);
+void network_origin_services_add(Network_Origin *network_origin, const char * id, Services *services);
+void network_origin_services_del(Network_Origin *network_origin, const char * id);
+Services *network_origin_services_get(const Network_Origin *network_origin, const char * key);
+Eina_Hash *network_origin_services_hash_get(const Network_Origin *network_origin);
+void network_origin_services_modify(Network_Origin *network_origin, const char * key, void *value);
+
+
+/* Network */
+Network *network_new(Eina_List * origins);
+void network_free(Network *network);
+
+void network_origins_add(Network *network, Network_Origin *network_origin);
+void network_origins_del(Network *network, Network_Origin *network_origin);
+Network_Origin *network_origins_get(const Network *network, unsigned int nth);
+unsigned int network_origins_count(const Network *network);
+Eina_List *network_origins_list_get(const Network *network);
+void network_origins_list_clear(Network *network);
+void network_origins_list_set(Network *network, Eina_List *list);
+
+Network *network_load(const char *filename);
+Eina_Bool network_save(Network *network, const char *filename);
 
 /* Global initializer / shutdown functions */
 void eve_state_init(void);

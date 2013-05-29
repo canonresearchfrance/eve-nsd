@@ -23,6 +23,7 @@ int _log_domain = -1;
 Hist *hist = NULL;
 Fav *fav = NULL;
 Config *config = NULL;
+Network *network = NULL;
 Session *session = NULL;
 App app;
 
@@ -779,6 +780,7 @@ elm_main(int argc, char **argv)
                             enable_plugins,
                             EINA_FALSE /* enable_private_mode */,
                             enable_touch_interface,
+                            EINA_FALSE /* enable_auto_network_access */,
                             DEFAULT_URL /* home_page */,
                             NULL /* proxy */,
                             EINA_FALSE /* restore_state */,
@@ -834,6 +836,19 @@ elm_main(int argc, char **argv)
      {
         r = -1;
         goto end;
+     }
+
+   eina_strlcpy(basename, "services.eet", sizeof(path) - dirlen);
+   service_config_filename_set(path);
+   network = network_load(path);
+   if (!network)
+     {
+        network = network_new(NULL);
+        if (!network_save(network, path))
+          {
+             r = -1;
+             goto end_network;
+          }
      }
 
 #define BOOL_OPT(opt)                                           \
@@ -915,8 +930,12 @@ end_fav:
    _cb_session_save(session);
    session_free(session);
 end_session:
+   // network_save shall not be call because Services icons has been freed
+   // network_save shall be call before exit elm_run()
+   network_free(network);
+end_network:
    if (conn) edbus_connection_unref(conn);
-   if (session_save_timer) ecore_timer_del(session_save_timer);
+   if (session_save_timer) ecore_timer_del(session_save_timer); 
 
    eina_log_domain_unregister(_log_domain);
    _log_domain = -1;

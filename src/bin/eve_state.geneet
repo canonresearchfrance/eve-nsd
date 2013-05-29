@@ -7,6 +7,7 @@ Config {
       enable_plugins            : uchar;
       enable_private_mode       : uchar;
       enable_touch_interface    : uchar;
+      enable_auto_network_access: uchar;
       home_page                 : str default "http://www.google.com";
       proxy                     : str;
       restore_state             : uchar;
@@ -53,4 +54,30 @@ Session_Window {
 
 Session {
       windows : list of Session_Window;
+}
+
+Services {
+    id      : str;
+    model   : str;
+    types   : str;
+    icon    : image compress 95;
+    allowed : uchar;
+}
+
+Device {
+    url           : str;
+    friendly_name : str;
+    icon          : image compress 95;
+    allowed       : uchar;
+    services      : hash of Services by id;
+}
+
+Network_Origin {
+    origin   : str;
+    devices  : list of Device;
+    services : hash of Services by id;
+}
+
+Network {
+    origins : list of Network_Origin;
 }

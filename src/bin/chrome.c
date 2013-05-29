@@ -11,6 +11,7 @@
 #include "private.h"
 
 #define BOOKMARK_MENU_PREALLOC_SIZE 32
+#define SERVICES_MENU_PREALLOC_SIZE 32
 
 typedef struct _More_Menu_Item More_Menu_Item;
 typedef struct _More_Menu_Set_Params More_Menu_Set_Params;
@@ -36,9 +37,13 @@ static More_Menu_Item *more_menu_privacy_clear_database(Browser_Window *, More_M
 static More_Menu_Item *more_menu_privacy_clear_cookies(Browser_Window *, More_Menu_Item *);
 static More_Menu_Item *more_menu_home_page_current_set(Browser_Window *, More_Menu_Item *);
 static More_Menu_Item *more_menu_home_page_default_set(Browser_Window *, More_Menu_Item *);
+static More_Menu_Item *more_menu_services_registered(Browser_Window *, More_Menu_Item *);
 
 static void on_more_item_click(void *data, Evas_Object *obj, void *event_info __UNUSED__);
 static void on_more_item_back_click(void *data, Evas_Object *edje, const char *emission __UNUSED__, const char *source __UNUSED__);
+
+static int more_item_compare(const void *item1, const void *item2);
+static void more_list_expanded_cb(void *data, Evas_Object *o, void *event_info);
 
 static char *tab_grid_text_get(void *data, Evas_Object *obj __UNUSED__, const char *part __UNUSED__);
 static Evas_Object *tab_grid_content_get(void *data, Evas_Object *obj __UNUSED__, const char *part __UNUSED__);
@@ -55,8 +60,6 @@ static void more_del(void *data __UNUSED__, Evas_Object *obj __UNUSED__);
 static char *service_list_text_get(void *data, Evas_Object *obj __UNUSED__, const char *part);
 static Evas_Object *service_content_get(void *data, Evas_Object *obj, const char *part);
 static Eina_Bool service_state_get(void *data __UNUSED__, Evas_Object *obj __UNUSED__, const char *part __UNUSED__);
-static void service_del(void *data __UNUSED__, Evas_Object *obj __UNUSED__);
-
 static void on_service_item_click(void *data, Evas_Object *obj, void *event_info __UNUSED__);
 static void on_valid_click(void *data, Evas_Object *obj, void *event_info __UNUSED__);
 
@@ -83,12 +86,16 @@ typedef enum {
 } More_Menu_Item_Flags;
 
 typedef enum {
-   CONFIG_TYPE_CHECKBOX,
+   CONFIG_TYPE_CHECKBOX = 10,
    CONFIG_TYPE_LIST,
    CONFIG_TYPE_STRING,
    CONFIG_TYPE_PASSWORD,
    CONFIG_TYPE_SPINNER,
    CONFIG_TYPE_LIST_INT,
+   CONFIG_TYPE_NETWORK_ORIGIN,
+   CONFIG_TYPE_DEVICE,
+   CONFIG_TYPE_UPNP_SERVICES,
+   CONFIG_TYPE_SERVICES,
 } More_Menu_Config_Type;
 
 typedef enum {
@@ -108,6 +115,9 @@ typedef enum {
    EVE_CONFIG_TEXT_ONLY_ZOOM,
    EVE_CONFIG_MINIMUM_FONT_SIZE,
    EVE_CONFIG_COOKIE_POLICY,
+   EVE_CONFIG_NETWORK_ORIGIN,
+   EVE_CONFIG_DEVICE,
+   EVE_CONFIG_SERVICES,
    EVE_CONFIG_LAST
 } Eve_Config;
 
@@ -215,6 +225,19 @@ static More_Menu_Item more_menu_config[] =
            }}, NULL, ITEM_FLAG_ARROW },
          { ITEM_TYPE_LAST, NULL, NULL, NULL, ITEM_FLAG_NONE },
      }, NULL, ITEM_FLAG_ARROW },
+   { ITEM_TYPE_STATIC_FOLDER, "Network discovery",
+     (More_Menu_Item[]) {
+         { ITEM_TYPE_CONFIG, "Enable auto authorize policy",
+           (More_Menu_Config[]) {{
+             .type = CONFIG_TYPE_CHECKBOX,
+             .conf = EVE_CONFIG_ENABLE_JAVASCRIPT,
+             .conf_get = config_enable_auto_network_access_get,
+             .conf_set = config_enable_auto_network_access_set,
+           }}, NULL, ITEM_FLAG_NONE },
+         { ITEM_TYPE_DYNAMIC_FOLDER, "Services registered", more_menu_services_registered, NULL, ITEM_FLAG_ARROW },
+         { ITEM_TYPE_LAST, NULL, NULL, NULL, ITEM_FLAG_NONE },
+     }, NULL, ITEM_FLAG_ARROW },
+
    { ITEM_TYPE_STATIC_FOLDER, "Privacy",
      (More_Menu_Item[]) {
          { ITEM_TYPE_CALLBACK_NO_HIDE, "Clear everything", more_menu_privacy_clear_everything, NULL, ITEM_FLAG_NONE },
@@ -368,6 +391,38 @@ static More_Menu_Item more_menu_root[] =
    { ITEM_TYPE_LAST, NULL, NULL, NULL, ITEM_FLAG_NONE }
 };
 
+static More_Menu_Config more_config_network_origin[] = 
+{{
+    .type = CONFIG_TYPE_NETWORK_ORIGIN,
+    .conf = EVE_CONFIG_NETWORK_ORIGIN,
+    .conf_get = NULL,
+    .conf_set = NULL
+}};
+
+static More_Menu_Config more_config_device[] = 
+{{
+    .type = CONFIG_TYPE_DEVICE,
+    .conf = EVE_CONFIG_DEVICE,
+    .conf_get = device_allowed_get,
+    .conf_set = NULL
+}};
+
+static More_Menu_Config more_config_upnp_services[] = 
+{{
+    .type = CONFIG_TYPE_UPNP_SERVICES,
+    .conf = EVE_CONFIG_SERVICES,
+    .conf_get = services_allowed_get,
+    .conf_set = NULL
+}};
+
+static More_Menu_Config more_config_services[] = 
+{{
+    .type = CONFIG_TYPE_SERVICES,
+    .conf = EVE_CONFIG_SERVICES,
+    .conf_get = services_allowed_get,
+    .conf_set = NULL
+}};
+
 static const Elm_Gengrid_Item_Class gic_default = {
    .func = {
        .text_get = tab_grid_text_get,
@@ -427,6 +482,26 @@ static const Elm_Genlist_Item_Class glic_config_list = {
    .item_style = "config/double_label/ewebkit"
 };
 
+static const Elm_Genlist_Item_Class glic_config_origin = {
+   .func = {
+       .text_get = list_text_get,
+       .content_get = more_content_get,
+       .state_get = more_state_get,
+       .del = more_del
+    },
+   .item_style = "config"
+};
+
+static const Elm_Genlist_Item_Class glic_config_service = {
+   .func = {
+       .text_get = list_text_get,
+       .content_get = more_content_get,
+       .state_get = more_state_get,
+       .del = more_del
+    },
+   .item_style = "double_label/ewebkit"
+};
+
 static const Elm_Genlist_Item_Class glic_page = {
    .func = {
        .text_get = page_text_get,
@@ -442,7 +517,15 @@ static const Elm_Genlist_Item_Class glic_service_origin = {
        .text_get = service_list_text_get,
        .content_get = service_content_get,
        .state_get = service_state_get,
-       .del = service_del
+    },
+   .item_style = "ewebkit"
+};
+
+static const Elm_Genlist_Item_Class glic_device_list = {
+   .func = {
+       .text_get = service_list_text_get,
+       .content_get = service_content_get,
+       .state_get = service_state_get,
     },
    .item_style = "ewebkit"
 };
@@ -452,10 +535,10 @@ static const Elm_Genlist_Item_Class glic_service_list = {
        .text_get = service_list_text_get,
        .content_get = service_content_get,
        .state_get = service_state_get,
-       .del = service_del
     },
    .item_style = "double_label/ewebkit"
 };
+
 
 static void
 proxy_config_home_page_set(Config *config, const char *home_page)
@@ -902,8 +985,8 @@ on_fav_on(void *data, Evas_Object *o __UNUSED__,
 
    if (url)
      {
-        const char *title = ewk_view_title_get(view);
-        fav_items_add(fav, url, fav_item_new(url, title, 1));
+        const Ewk_Text_With_Direction *title = ewk_view_title_get(view);
+        fav_items_add(fav, url, fav_item_new(url, title->string, 1));
      }
 }
 
@@ -956,7 +1039,8 @@ _chrome_title_get(Evas_Object *chrome, char *buf, size_t bufsize)
 {
    Evas_Object *view = evas_object_data_get(chrome, "view");
    const char *url = ewk_view_uri_get(view);
-   const char *title = ewk_view_title_get(view);
+   const Ewk_Text_With_Direction *title_dir = ewk_view_title_get(view);
+   const char *title = title_dir->string;
    int p = ewk_view_load_progress_get(view) * 100;
 
    if (!title)
@@ -995,7 +1079,8 @@ _chrome_state_apply(Evas_Object *chrome, Evas_Object *view)
 {
    Evas *canvas = evas_object_evas_get(chrome);
    const char *url = ewk_view_uri_get(view);
-   const char *title = ewk_view_title_get(view);
+   const Ewk_Text_With_Direction *title_dir = ewk_view_title_get(view);
+   const char *title = title_dir->string;
    Evas_Object *ed = elm_layout_edje_get(chrome);
    Evas_Object *text_url;
    Evas_Object *favicon;
@@ -1150,6 +1235,138 @@ more_menu_home_page_default_set(Browser_Window *win __UNUSED__, More_Menu_Item *
    return NULL;
 }
 
+static void
+on_more_clear_click(void *data, Evas_Object *o __UNUSED__,
+           const char *emission __UNUSED__, const char *source __UNUSED__)
+{
+   Evas_Object *chrome = data;
+   Evas_Object *more_list = evas_object_data_get(chrome, "more-list");
+   Network_Origin *origins;
+   Eina_List *origins_list;
+
+   elm_genlist_clear(more_list);
+
+   network_origins_list_clear(network);
+   network_save(network, NULL);
+}
+
+static inline Eina_Bool 
+more_menu_services_item_append_new(More_Menu_Item **items, int *nbItems, const char* text, void* next, void* data) 
+{
+    More_Menu_Item *new_items;
+    More_Menu_Item *bm_item;
+    int n_items = *nbItems;
+
+    bm_item = calloc(1, sizeof(More_Menu_Item));
+    bm_item->type = ITEM_TYPE_CONFIG;
+    bm_item->text = eina_stringshare_add(text);
+    bm_item->next = next;
+    bm_item->data = data;
+    bm_item->flags = ITEM_FLAG_DYNAMIC;
+
+    if (!*items)
+        *items = calloc(1, sizeof(More_Menu_Item) * SERVICES_MENU_PREALLOC_SIZE);
+    else if (n_items % SERVICES_MENU_PREALLOC_SIZE == 0)
+    {
+        new_items = realloc(*items, (SERVICES_MENU_PREALLOC_SIZE * n_items * sizeof(More_Menu_Item)));
+        if (new_items)
+            *items = new_items;
+        else {
+            free(bm_item);
+            return EINA_FALSE;
+        }
+    }
+
+    memcpy(&(*items)[n_items], bm_item, sizeof(More_Menu_Item));
+    *nbItems = ++n_items;
+    free(bm_item);
+     
+    return EINA_TRUE;
+}
+
+static More_Menu_Item *
+more_menu_services_registered(Browser_Window *win __UNUSED__, More_Menu_Item *current_item __UNUSED__)
+{
+    Evas_Object *ed = elm_layout_edje_get(win->current_chrome);
+    More_Menu_Item *bm_item;
+    More_Menu_Item *ret = NULL, *new_ret;
+    Eina_List *l, *origins = network_origins_list_get(network);
+    Network_Origin *network_origin;
+    int n_items = 0;
+#define MAX_SUBTEXT_LEN 128
+
+    EINA_LIST_FOREACH(origins, l, network_origin)
+    {
+        Eina_List *ll, *devices = network_origin_devices_list_get(network_origin);
+        Eina_Iterator *service_itr = eina_hash_iterator_key_new(network_origin_services_hash_get(network_origin));
+        Device *device;
+        const char *service_id;
+
+        if (more_menu_services_item_append_new(&ret, &n_items, 
+                                               network_origin_origin_get(network_origin),
+                                               more_config_network_origin, network_origin) == EINA_FALSE)
+           goto realloc_error;
+
+        EINA_ITERATOR_FOREACH(service_itr, service_id)
+        {
+            Services *services = network_origin_services_get(network_origin, service_id);
+
+            if (more_menu_services_item_append_new(&ret, &n_items, 
+                                                   services_model_get(services),
+                                                   more_config_services, services) == EINA_FALSE)
+               goto realloc_error;
+        }
+             
+        EINA_LIST_FOREACH(devices, ll, device)
+        {
+            service_itr = eina_hash_iterator_key_new(device_services_hash_get(device));
+
+            if (more_menu_services_item_append_new(&ret, &n_items, 
+                                                   device_friendly_name_get(device),
+                                                   more_config_device, device) == EINA_FALSE)
+               goto realloc_error;
+
+            EINA_ITERATOR_FOREACH(service_itr, service_id)
+            {
+                Services *services = device_services_get(device, service_id);
+            
+                if (more_menu_services_item_append_new(&ret, &n_items, 
+                                                   services_model_get(services),
+                                                   more_config_upnp_services, services) == EINA_FALSE)
+                   goto realloc_error;
+            }
+        }
+    }
+    
+    if (n_items) {
+        /* Display the clear button on the more menu */
+        edje_object_signal_callback_del(ed, "more,clear,clicked", "", on_more_clear_click);
+        edje_object_signal_callback_add(ed, "more,clear,clicked", "", on_more_clear_click, win->current_chrome);
+        edje_object_signal_emit(ed, "more,clear,show", "");
+    }
+    
+realloc_error:
+
+    if (!n_items)
+        return NULL;
+
+    bm_item = calloc(1, sizeof(More_Menu_Item));
+    bm_item->type = ITEM_TYPE_LAST;
+    new_ret = realloc(ret, (1 + n_items) * sizeof(*ret));
+    if (!new_ret)
+    {
+        free(bm_item);
+        free(ret);
+        return NULL;
+    }
+
+    ret = new_ret;
+    memcpy(&ret[n_items], bm_item, sizeof(*ret));
+    free(bm_item);
+
+    return ret;
+}
+
 static More_Menu_Item *
 more_menu_privacy_clear_everything(Browser_Window *win __UNUSED__, More_Menu_Item *mmi)
 {
@@ -1260,6 +1477,7 @@ service_list_release(Evas_Object *view)
 {
    Evas_Object *chrome = evas_object_data_get(view, "chrome");
    Evas_Object *hl = evas_object_data_get(chrome, "service-list");
+   Eina_List *service_items = evas_object_data_get(hl, "service-items");
    Evas_Object *ed = elm_layout_edje_get(chrome);
    Eina_List *service_iter = evas_object_data_get(chrome, "services");
    Eina_List *l;
@@ -1267,6 +1485,8 @@ service_list_release(Evas_Object *view)
 
    /* release widgets */
    elm_genlist_clear(hl);
+   service_items_clear(&service_items);
+   evas_object_data_set(hl, "service-items", service_items);
 
    /* release ewk objects */
    EINA_LIST_FOREACH(service_iter, l, srv)
@@ -1295,16 +1515,36 @@ on_action_valid(void *data, Evas_Object *o __UNUSED__,
    Evas_Object *chrome = data;
    Evas_Object *ed = elm_layout_edje_get(chrome);
    Eina_List *service_iter = evas_object_data_get(chrome, "services");
+   Evas_Object *hl = evas_object_data_get(chrome, "service-list");
+   Eina_List *service_items = evas_object_data_get(hl, "service-items");
    Eina_List *l;
    Ewk_NetworkServices *srv;
+   Service_Item *item;
 
    EINA_LIST_FOREACH(service_iter, l, srv)
       ewk_network_services_allowed_notify(srv);
+
+   /* Save configuration service */
+   EINA_LIST_FOREACH(service_items, l, item) 
+   {
+        Eina_Bool allowed = service_item_widget_allowed_get(item);
+
+        /* Apply to the configuration */
+        service_config_register_services(item, allowed);
+   }
+   network_save(network, NULL);
 
    service_iter = eina_list_free(service_iter);
    evas_object_data_set(chrome, "services", service_iter);
 
    edje_object_signal_emit(ed, "toggle,service", "");
+   edje_object_signal_emit(ed, "permission,finished,service", "");
+}
+
+static void 
+service_item_del(void *data, Evas_Object *obj, void *event_info)
+{
+   service_item_widget_set((Service_Item *)data, NULL);    
 }
 
 static void 
@@ -1312,15 +1552,47 @@ service_list_append(void *data, Service_Item *item)
 {
    Elm_Object_Item *gl_item = NULL;
    Evas_Object *list = (Evas_Object*)data;
+   Eve_Network_Type type = service_item_type_get(item);
 
-   if (service_item_have_service(item))
-      gl_item = elm_genlist_item_append(list, &glic_service_list, item, NULL, 
-                                        ELM_GENLIST_ITEM_NONE, NULL, NULL);
-   else
-      gl_item = elm_genlist_item_append(list, &glic_service_origin, item, NULL, 
-                                        ELM_GENLIST_ITEM_NONE, NULL, NULL);
+   switch (type) {
+   case NETWORK_TYPE_DEVICE_UPNP:
+      gl_item = elm_genlist_item_sorted_insert(list, &glic_device_list, item,
+                                        service_item_parent_widget_get(item), 
+                                        ELM_GENLIST_ITEM_TREE, &service_item_compare, NULL, NULL);
+      elm_genlist_item_expanded_set(gl_item, EINA_FALSE);
+      break;
+
+   case NETWORK_TYPE_SERVICE_ZEROCONF:
+      gl_item = elm_genlist_item_sorted_insert(list, &glic_service_list, item,
+                                        service_item_parent_widget_get(item), 
+                                        ELM_GENLIST_ITEM_NONE, &service_item_compare, NULL, NULL);
+      break;
+
+   case NETWORK_TYPE_SERVICE_UNKNOWN:
+      gl_item = elm_genlist_item_sorted_insert(list, &glic_service_origin, item, NULL, 
+                                        ELM_GENLIST_ITEM_TREE, &service_item_compare, NULL, NULL);
+      elm_genlist_item_expanded_set(gl_item, EINA_TRUE);
+      break;
+
+   default:
+      break;
+   }
+
+   if (gl_item)
+      elm_object_item_del_cb_set(gl_item, service_item_del);
 
    service_item_widget_set(item, gl_item);
+}
+
+void *
+service_icon_from_data_get(const void *widget, const void *data, size_t size) {
+   const Elm_Object_Item *gl_item = widget;
+   Evas_Object *icon;
+   
+   icon = evas_object_image_add(evas_object_evas_get(elm_object_item_widget_get(gl_item)));
+   evas_object_image_memfile_set(icon, (void *)data, size, "png", NULL);
+   
+   return icon;
 }
 
 static void
@@ -1330,6 +1602,7 @@ on_service_refresh_click(void *data, Evas_Object *o __UNUSED__,
    Evas_Object *chrome = data;
    Evas_Object *ed = elm_layout_edje_get(chrome);
    Evas_Object *hl = evas_object_data_get(chrome, "service-list");
+   Eina_List *service_items = evas_object_data_get(hl, "service-items");
    Eina_List *service_iter = evas_object_data_get(chrome, "services");
    Eina_List *service_updated_iter = evas_object_data_get(chrome, "services-updated");
    Eina_List *l, *updated_l;
@@ -1340,16 +1613,18 @@ on_service_refresh_click(void *data, Evas_Object *o __UNUSED__,
       EINA_LIST_FOREACH(service_updated_iter, updated_l, updated_srv)
          if (srv == updated_srv) {
             found = EINA_TRUE;
-            service_updated_iter = eina_list_remove(service_updated_iter, updated_srv);
             break;
          }
 
    if (found == EINA_TRUE) {
       elm_genlist_clear(hl);
-      service_list_set(service_iter, &service_list_append, hl);
+      service_items_clear(&service_items);
+      service_list_set(service_iter, network, &service_items, &service_list_append, hl);
+      evas_object_data_set(hl, "service-items", service_items);
       elm_genlist_realized_items_update(hl);
    }
 
+   eina_list_free(service_updated_iter);
    evas_object_data_set(chrome, "services-updated", service_updated_iter);
    edje_object_signal_emit(ed, "list,refresh,hide", "");
 }
@@ -1371,6 +1646,7 @@ on_service_cancel_click(void *data, Evas_Object *o __UNUSED__,
    evas_object_data_set(chrome, "services", service_iter);
 
    edje_object_signal_emit(ed, "toggle,service", "");
+   edje_object_signal_emit(ed, "permission,finished,service", "");
 }
 
 static void
@@ -1394,13 +1670,19 @@ on_view_networkservices_request_updated(void *data, Evas_Object *view, void *eve
    Evas_Object *chrome = data;
    Evas_Object *ed = elm_layout_edje_get(chrome);
    Eina_List *service_iter = evas_object_data_get(chrome, "services-updated");
+   Eina_Bool register_callback = EINA_FALSE;
     
+   if (!service_iter)
+      register_callback = EINA_TRUE;
+
    service_iter = eina_list_append(service_iter, services);
 
    evas_object_data_set(chrome, "services-updated", service_iter);
 
-   edje_object_signal_callback_add(ed, "list,refresh,clicked", "", on_service_refresh_click, chrome);
-   edje_object_signal_emit(ed, "list,refresh,show", "");
+   if (register_callback == EINA_TRUE) {
+      edje_object_signal_callback_add(ed, "list,refresh,clicked", "", on_service_refresh_click, chrome);
+      edje_object_signal_emit(ed, "list,refresh,show", "");
+   }
 }
 
 static void
@@ -1416,9 +1698,9 @@ on_view_networkservices_request_canceled(void *data, Evas_Object *view, void *ev
    evas_object_data_set(chrome, "services", service_iter);
 }
 
-void service_item_widget_update(void *data) 
+void service_item_widget_update(const void *widget) 
 {
-    elm_genlist_item_update((Elm_Object_Item *)data);
+    elm_genlist_item_update((Elm_Object_Item *)widget);
 }
 
 static void
@@ -1427,17 +1709,42 @@ on_view_networkservices_request_finished(void *data, Evas_Object *view, void *ev
    Evas_Object *chrome = data;
    Evas_Object *ed = elm_layout_edje_get(chrome);
    Evas_Object *hl = evas_object_data_get(chrome, "service-list");
+   Eina_List *service_items = evas_object_data_get(hl, "service-items");
    Eina_List *service_iter = evas_object_data_get(chrome, "services");
+   Eina_Bool require_authority;
+   Eina_Bool auto_access;
 
    if (!service_iter)
-       return;
+      return;
 
    elm_genlist_clear(hl);
-   service_list_set(service_iter, &service_list_append, hl);
+   
+   require_authority = service_list_set(service_iter, network, &service_items, &service_list_append, hl);
 
-   edje_object_signal_emit(ed, "list,refresh,hide", "");
-   edje_object_signal_emit(ed, "toggle,service", "");
-   edje_object_signal_callback_add(ed, "list,cancel,clicked", "", on_service_cancel_click, chrome);
+   evas_object_data_set(hl, "service-items", service_items);
+
+   auto_access = config_enable_auto_network_access_get(config);
+
+   /* Apply configuration setting: network origin with the associate 
+    * network services previously requested and validate */
+   if ((require_authority == EINA_TRUE) || (auto_access == EINA_FALSE)) {
+      edje_object_signal_emit(ed, "permission,request,service", "");
+      edje_object_signal_emit(ed, "list,refresh,hide", "");
+      edje_object_signal_emit(ed, "toggle,service", "");
+   
+      edje_object_signal_callback_del(ed, "list,cancel,clicked", "", on_service_cancel_click);
+      edje_object_signal_callback_add(ed, "list,cancel,clicked", "", on_service_cancel_click, chrome);
+   } else {
+       Eina_List *l;
+       Ewk_NetworkServices *srv;
+
+       EINA_LIST_FOREACH(service_iter, l, srv)
+          ewk_network_services_allowed_notify(srv);
+
+       service_iter = eina_list_free(service_iter);
+       evas_object_data_set(chrome, "services", service_iter);
+       edje_object_signal_emit(ed, "permission,finished,service", "");
+   }
 }
 
 static void
@@ -1661,6 +1968,20 @@ cb_config_bool_changed(void *data, Evas_Object *obj, void *event_info __UNUSED__
 }
 
 static void
+cb_config_device_changed(void *data, Evas_Object *obj, void *event_info __UNUSED__)
+{
+   device_allowed_set((Device *)data, elm_check_state_get(obj));
+   network_save(network, NULL);
+}
+
+static void
+cb_config_services_changed(void *data, Evas_Object *obj, void *event_info __UNUSED__)
+{
+   services_allowed_set((Services *)data, elm_check_state_get(obj));
+   network_save(network, NULL);
+}
+
+static void
 cb_config_int_changed(void *data, Evas_Object *obj, void *event_info __UNUSED__)
 {
    More_Menu_Config *mmc = data;
@@ -1686,9 +2007,66 @@ cb_config_string_changed(void *data, Evas_Object *obj, void *event_info __UNUSED
       }
 }
 
-static Evas_Object *
-config_widget_get(Evas_Object *parent, More_Menu_Config *mmc)
+static void
+cb_config_removed(void *data, Evas_Object *obj, void *event_info __UNUSED__)
 {
+   More_Menu_Config *mmc = data;
+   void (*conf_set)(Config *, const char *);
+
+}
+
+static Evas_Object *
+config_icon_get(Evas_Object *parent, More_Menu_Item *mmi)
+{
+   More_Menu_Config *mmc = mmi->next;
+   Evas_Object * evas_icon = NULL;
+
+   if (!mmc->conf_get) return NULL;
+
+   switch (mmc->type) {
+   case CONFIG_TYPE_DEVICE:
+      {
+          Device *device = mmi->data;
+          evas_icon = device_icon_get(device, evas_object_evas_get(parent), service_config_filename_get());
+          break;
+      }
+   case CONFIG_TYPE_UPNP_SERVICES:
+   case CONFIG_TYPE_SERVICES:
+      {
+          Services *services = mmi->data;
+          evas_icon = services_icon_get(services, evas_object_evas_get(parent), service_config_filename_get());
+          break;
+      }
+   default:
+      return NULL;
+   }
+   
+   if (evas_icon) {
+       Evas_Object *icon;
+       Evas_Object *inlined_icon;
+       void *data;
+       int w, h;
+                                                                                                      
+       icon = elm_icon_add(parent);
+       inlined_icon = elm_image_object_get(icon);
+                                                                                                      
+       evas_object_image_size_get(evas_icon, &w, &h);
+       data = evas_object_image_data_get(evas_icon, EINA_FALSE);
+                                                                                                      
+       evas_object_image_size_set(inlined_icon, w, h);
+       evas_object_image_data_copy_set(inlined_icon, data);
+     
+       return icon;
+   }
+
+   return NULL;
+}
+
+static Evas_Object *
+config_widget_get(Evas_Object *parent, More_Menu_Item *mmi)
+{
+   More_Menu_Config *mmc = mmi->next;
+
    if (!mmc->conf_get) return NULL;
 
    switch (mmc->type) {
@@ -1706,6 +2084,36 @@ config_widget_get(Evas_Object *parent, More_Menu_Config *mmc)
 
          return toggle;
       }
+   case CONFIG_TYPE_DEVICE:
+      {
+         Eina_Bool (*conf_get)(Device *);
+         Evas_Object *toggle = elm_check_add(parent);
+
+         conf_get = mmc->conf_get;
+         elm_object_style_set(toggle, "ewebkit");
+         elm_object_part_text_set(toggle, "on", "ON");
+         elm_object_part_text_set(toggle, "off", "OFF");
+         elm_check_state_set(toggle, conf_get(mmi->data));
+         evas_object_smart_callback_add(toggle, "changed", cb_config_device_changed, mmi->data);
+
+         return toggle;
+      }
+
+   case CONFIG_TYPE_SERVICES:
+      {
+         Eina_Bool (*conf_get)(Services *);
+         Evas_Object *toggle = elm_check_add(parent);
+
+         conf_get = mmc->conf_get;
+         elm_object_style_set(toggle, "ewebkit");
+         elm_object_part_text_set(toggle, "on", "ON");
+         elm_object_part_text_set(toggle, "off", "OFF");
+         elm_check_state_set(toggle, conf_get(mmi->data));
+         evas_object_smart_callback_add(toggle, "changed", cb_config_services_changed, mmi->data);
+
+         return toggle;
+      }
+
    case CONFIG_TYPE_SPINNER:
       {
          int (*conf_get)(Config *);
@@ -1779,10 +2187,41 @@ on_list_completely_hidden(void *data, Evas_Object *ed, const char *emission __UN
         case ITEM_TYPE_CONFIG:
            {
                More_Menu_Config *mmc = params->root[i].next;
-               if ((mmc->type == CONFIG_TYPE_LIST) || (mmc->type == CONFIG_TYPE_LIST_INT) || (mmc->type == CONFIG_TYPE_STRING))
+               static Elm_Object_Item *gl_parent_device_item = NULL;
+               static Elm_Object_Item *gl_parent_network_origin_item = NULL;
+
+               if ((mmc->type == CONFIG_TYPE_LIST) || 
+                   (mmc->type == CONFIG_TYPE_LIST_INT) || 
+                   (mmc->type == CONFIG_TYPE_STRING))
                   gl_item = elm_genlist_item_append(params->list, &glic_config_list,
                       &(params->root[i]), NULL, ELM_GENLIST_ITEM_NONE, on_more_item_click, &(params->root[i]));
-               else if (params->root[i].flags & ITEM_FLAG_SELECTABLE)
+               else if (mmc->type == CONFIG_TYPE_NETWORK_ORIGIN) {
+                  gl_item = elm_genlist_item_sorted_insert(params->list, &glic_config_origin, &(params->root[i]), 
+                                                           NULL, ELM_GENLIST_ITEM_TREE, 
+                                                           more_item_compare, NULL, NULL);
+                  evas_object_smart_callback_del(params->list, "expanded", more_list_expanded_cb);
+                  elm_genlist_item_expanded_set(gl_item, EINA_TRUE);
+                  evas_object_smart_callback_add(params->list, "expanded", more_list_expanded_cb, params->list);
+                  gl_parent_network_origin_item = gl_item;
+               } else if (mmc->type == CONFIG_TYPE_DEVICE) {
+                  gl_item = elm_genlist_item_sorted_insert(params->list, &glic_config_origin, &(params->root[i]), 
+                                                           gl_parent_network_origin_item, ELM_GENLIST_ITEM_TREE, 
+                                                           more_item_compare, NULL, NULL);
+                  elm_genlist_item_expanded_set(gl_item, EINA_FALSE);
+                  elm_object_item_del_cb_set(gl_item, service_item_del);
+                  gl_parent_device_item = gl_item;
+               } else if (mmc->type == CONFIG_TYPE_UPNP_SERVICES) {
+                  /* postpone item insertion to expanded device callback (more_list_expand_request_cb) */
+                  /*gl_item = elm_genlist_item_sorted_insert(params->list, &glic_config_service, &(params->root[i]), 
+                                                           gl_parent_device_item, ELM_GENLIST_ITEM_NONE, 
+                                                           more_item_compare, NULL, NULL);
+                  elm_object_item_del_cb_set(gl_item, service_item_del);*/
+               } else if (mmc->type == CONFIG_TYPE_SERVICES) {
+                  gl_item = elm_genlist_item_sorted_insert(params->list, &glic_config_service, &(params->root[i]), 
+                                                           gl_parent_network_origin_item, ELM_GENLIST_ITEM_NONE, 
+                                                           more_item_compare, NULL, NULL);
+                  elm_object_item_del_cb_set(gl_item, service_item_del);
+               } else if (params->root[i].flags & ITEM_FLAG_SELECTABLE)
                   gl_item = elm_genlist_item_append(params->list, &glic_config_selectable,
                       &(params->root[i]), NULL, ELM_GENLIST_ITEM_NONE, on_more_item_click, &(params->root[i]));
                else
@@ -1863,6 +2302,8 @@ on_more_item_back_click(void *data, Evas_Object *edje,
    More_Menu_Item *mmi;
    Browser_Window *win = evas_object_data_get(edje, "win");
    Evas_Object *list = data;
+
+   edje_object_signal_emit(edje, "more,clear,hide", "");
 
    edje_object_signal_emit(edje, "list,animate,right", "");
    edje_object_part_text_set(edje, "more-list-title", edje_object_part_text_get(edje, "more-list-back-button-text"));
@@ -2083,6 +2524,33 @@ more_menu_config_create(Evas_Object *parent, More_Menu_Item *item, More_Menu_Con
    return NULL;
 }
 
+static int
+more_item_compare(const void *item1, const void *item2)
+{
+   int ret;
+   More_Menu_Item *mmi1 = elm_object_item_data_get((const Elm_Object_Item *)item1);
+   More_Menu_Item *mmi2 = elm_object_item_data_get((const Elm_Object_Item *)item2);
+   More_Menu_Config *mmc1 = mmi1->next;
+   More_Menu_Config *mmc2 = mmi2->next;
+   const char *str1 = NULL;
+   const char *str2 = NULL;
+   
+   if (mmc1->type == CONFIG_TYPE_DEVICE)
+      str1 = device_friendly_name_get((Device *)mmi1->data);
+   else if ((mmc1->type == CONFIG_TYPE_SERVICES) || (mmc1->type == CONFIG_TYPE_UPNP_SERVICES))
+      str1 = services_model_get((Services *)mmi1->data);
+
+   if (mmc2->type == CONFIG_TYPE_DEVICE)
+      str2 = device_friendly_name_get((Device *)mmi2->data);
+   else if ((mmc2->type == CONFIG_TYPE_SERVICES) || (mmc2->type == CONFIG_TYPE_UPNP_SERVICES))
+      str2 = services_model_get((Services *)mmi2->data);
+
+   if (!(ret = strcmp(str1, str2)))
+      return ret;
+
+   return (ret > 0 ? -1 : 1);
+}
+
 static void
 on_more_item_click(void *data, Evas_Object *obj,
                    void *event_info __UNUSED__)
@@ -2132,7 +2600,7 @@ on_more_item_click(void *data, Evas_Object *obj,
             return;
 
          conf = mmi->next;
-         if (conf->type == CONFIG_TYPE_CHECKBOX)
+         if ((conf->type == CONFIG_TYPE_CHECKBOX))
          {
              Evas_Object *end = elm_object_item_part_content_get(event_info, "elm.swallow.end");
              if (end) elm_check_state_set(end, !elm_check_state_get(end));
@@ -2503,8 +2971,8 @@ on_key_down(void *data, Evas *e __UNUSED__, Evas_Object *o __UNUSED__,
                }
              else
                {
-                  const char *title = ewk_view_title_get(view);
-                  fav_items_add(fav, url, fav_item_new(url, title, 1));
+                  const Ewk_Text_With_Direction *title = ewk_view_title_get(view);
+                  fav_items_add(fav, url, fav_item_new(url, title->string, 1));
                }
              edje_object_signal_emit(ed, "favorite,hilight", "");
           }
@@ -2552,8 +3020,12 @@ tab_grid_text_get(void *data, Evas_Object *obj __UNUSED__, const char *part __UN
 {
    if (data)
      {
-        const char *title = ewk_view_title_get(data);
-        return strdup(title ? title : "");
+        const Ewk_Text_With_Direction *title = ewk_view_title_get(data);
+
+        if (!title)
+            return NULL;
+
+        return strdup(title->string ? title->string : "");
      }
 
    return NULL;
@@ -2649,9 +3121,11 @@ list_text_get(void *data, Evas_Object *obj __UNUSED__, const char *part)
         if ((conf_get = mmc->conf_get))
           {
              if (mmc->type == CONFIG_TYPE_LIST_INT)
-                return strdup(_get_selected_int_value_title(mmc->data, (int)conf_get(config)));
+                return strdup(_get_selected_int_value_title(mmc->data, (int64_t)conf_get(config)));
              else if (mmc->type == CONFIG_TYPE_LIST)
                 return strdup(_get_selected_string_value_title(mmc->data, conf_get(config)));
+             else if ((mmc->type == CONFIG_TYPE_SERVICES) || (mmc->type == CONFIG_TYPE_UPNP_SERVICES))
+                 return mmi->data ? strdup(services_types_get(mmi->data)) : NULL;
 
              return NULL;
           }
@@ -2669,11 +3143,11 @@ more_content_get(void *data, Evas_Object *obj, const char *part)
    More_Menu_Item *mmi = data;
    if (!strcmp(part, "elm.swallow.icon"))
      {
-        Evas_Object *icon = NULL;
+        Evas_Object *icon = config_icon_get(obj, mmi);
         if (!icon && mmi->flags & ITEM_FLAG_SELECTED)
           {
              icon = elm_icon_add(obj);
-             elm_icon_file_set(icon, PACKAGE_DATA_DIR "/default.edj", "list-selected");
+             elm_image_file_set(icon, PACKAGE_DATA_DIR "/default.edj", "list-selected");
           }
         else if (mmi->type == ITEM_TYPE_PAGE)
           {
@@ -2685,11 +3159,11 @@ more_content_get(void *data, Evas_Object *obj, const char *part)
      }
    else if (!strcmp(part, "elm.swallow.end"))
      {
-        Evas_Object *end = config_widget_get(obj, mmi->next);
+        Evas_Object *end = config_widget_get(obj, mmi);
         if (!end && mmi->flags & ITEM_FLAG_ARROW)
           {
              end = elm_icon_add(obj);
-             elm_icon_file_set(end, PACKAGE_DATA_DIR "/default.edj", "list-arrow");
+             elm_image_file_set(end, PACKAGE_DATA_DIR "/default.edj", "list-arrow");
           }
         return end;
      }
@@ -2706,6 +3180,110 @@ more_state_get(void *data __UNUSED__, Evas_Object *obj __UNUSED__, const char *p
 static void
 more_del(void *data __UNUSED__, Evas_Object *obj __UNUSED__)
 {
+}
+
+static void
+more_list_expand_request_cb(void *data, Evas_Object *o, void *event_info)
+{
+   Elm_Object_Item *gl_item = event_info;
+   elm_genlist_item_expanded_set(gl_item, EINA_TRUE);
+}
+
+static void
+more_list_contract_request_cb(void *data, Evas_Object *o, void *event_info)
+{
+   Elm_Object_Item *gl_item = event_info;
+   elm_genlist_item_expanded_set(gl_item, EINA_FALSE);
+}
+
+static void
+more_service_item_del(void *data, Evas_Object *obj, void *event_info)
+{
+   free(data);
+}
+
+static void
+more_list_expanded_cb(void *data, Evas_Object *o, void *event_info)
+{
+   Eina_List *l;
+   Elm_Object_Item *gl_item = event_info;
+   More_Menu_Item *mmi = elm_object_item_data_get(gl_item);
+   Evas_Object *list = elm_object_item_widget_get(gl_item);
+   Elm_Object_Item *nitem;
+   Elm_Genlist_Item_Type type = ELM_GENLIST_ITEM_NONE;
+   More_Menu_Item *bm_item;
+
+   const More_Menu_Config *mmc = mmi->next;
+   const Elm_Genlist_Item_Class *ic;
+   
+
+   if (mmc == more_config_network_origin) {
+      Network_Origin *network_origin = mmi->data;
+      Eina_Iterator *service_itr = eina_hash_iterator_key_new(network_origin_services_hash_get(network_origin));
+      const char *service_id;
+      Eina_List *ll, *devices = network_origin_devices_list_get(network_origin);
+      Device *device;
+
+      EINA_ITERATOR_FOREACH(service_itr, service_id)
+      {
+         Services *services = network_origin_services_get(network_origin, service_id);
+
+         bm_item = calloc(1, sizeof(More_Menu_Item));
+         bm_item->type = ITEM_TYPE_CONFIG;
+         bm_item->flags = ITEM_FLAG_DYNAMIC;
+         bm_item->text = eina_stringshare_add(services_model_get(services));
+         bm_item->next = more_config_services;
+         bm_item->data = services;
+
+         nitem = elm_genlist_item_sorted_insert(list, &glic_config_service, bm_item, gl_item,
+                                                ELM_GENLIST_ITEM_NONE, &more_item_compare, NULL, NULL);
+
+         elm_object_item_del_cb_set(nitem, more_service_item_del);
+      }
+
+      EINA_LIST_FOREACH(devices, ll, device)
+      {
+         bm_item = calloc(1, sizeof(More_Menu_Item));
+         bm_item->type = ITEM_TYPE_CONFIG;
+         bm_item->flags = ITEM_FLAG_DYNAMIC;
+         bm_item->text = eina_stringshare_add(device_friendly_name_get(device));
+         bm_item->next = more_config_device;
+         bm_item->data = device;
+        
+         nitem = elm_genlist_item_sorted_insert(list, &glic_config_origin, bm_item, gl_item,
+                                                ELM_GENLIST_ITEM_TREE, &more_item_compare, NULL, NULL);
+         elm_genlist_item_expanded_set(nitem, EINA_FALSE);
+         elm_object_item_del_cb_set(nitem, more_service_item_del);
+      }
+
+   } else if (mmc == more_config_device) {
+      Device *device = mmi->data;
+      Eina_Iterator *service_itr = eina_hash_iterator_key_new(device_services_hash_get(device));
+      const char *service_id;
+
+      EINA_ITERATOR_FOREACH(service_itr, service_id) 
+      {
+         Services *services = device_services_get(device, service_id);
+
+         bm_item = calloc(1, sizeof(More_Menu_Item));
+         bm_item->type = ITEM_TYPE_CONFIG;
+         bm_item->flags = ITEM_FLAG_DYNAMIC;
+         bm_item->text = eina_stringshare_add(services_model_get(services));
+         bm_item->next = more_config_upnp_services;
+         bm_item->data = services;
+
+         nitem = elm_genlist_item_sorted_insert(list, &glic_config_service, bm_item, gl_item,
+                                                ELM_GENLIST_ITEM_NONE, &more_item_compare, NULL, NULL);
+         elm_object_item_del_cb_set(nitem, more_service_item_del);
+      }
+   }
+}
+
+static void
+more_list_contracted_cb(void *data, Evas_Object *o, void *event_info)
+{
+   Elm_Object_Item *gl_item = event_info;
+   elm_genlist_item_subitems_clear(gl_item);
 }
 
 static char *
@@ -2736,26 +3314,27 @@ service_content_get(void *data, Evas_Object *obj, const char *part)
    if (!strcmp(part, "elm.swallow.icon"))
      {
         Evas_Object *icon;
-        void *data;
+        const void *data;
         size_t size;
 
         service_item_icon_data_get(si, &data, &size);
 
         if (data && size > 0) {
              icon = elm_icon_add(obj);
-             elm_icon_memfile_set(icon, data, size, "png", NULL);
+             elm_image_memfile_set(icon, data, size, "png", NULL);
              return icon;
         }
         return NULL;
      }
-   else if ((service_item_have_service(si) == EINA_TRUE) && !strcmp(part, "elm.swallow.end"))
+   else if ((service_item_have_service(si) == EINA_TRUE) &&
+            !strcmp(part, "elm.swallow.end"))
      {
         Evas_Object *end = elm_check_add(obj);
 
         elm_object_style_set(end, "ewebkit");
         elm_object_part_text_set(end, "on", "ON");
         elm_object_part_text_set(end, "off", "OFF");
-        elm_check_state_set(end, EINA_TRUE);
+        elm_check_state_set(end, service_item_allowed_get(si));
         evas_object_smart_callback_add(end, "changed", on_service_item_change, si);
 
         return end;
@@ -2770,11 +3349,56 @@ service_state_get(void *data __UNUSED__, Evas_Object *obj __UNUSED__, const char
    return EINA_FALSE;
 }
 
-static void 
-service_del(void *data __UNUSED__, Evas_Object *obj __UNUSED__)
+static void
+service_list_expand_request_cb(void *data, Evas_Object *o, void *event_info)
 {
-   service_item_free((Service_Item *)data);
+   Elm_Object_Item *gl_item = event_info;
+   elm_genlist_item_expanded_set(gl_item, EINA_TRUE);
 }
+
+static void
+service_list_contract_request_cb(void *data, Evas_Object *o, void *event_info)
+{
+   Elm_Object_Item *gl_item = event_info;
+   elm_genlist_item_expanded_set(gl_item, EINA_FALSE);
+}
+
+static void
+service_list_expanded_cb(void *data, Evas_Object *o, void *event_info)
+{
+   Eina_List *l;
+   Elm_Object_Item *gl_item = event_info;
+   Service_Item *si, *d = elm_object_item_data_get(gl_item);
+   Evas_Object *list = elm_object_item_widget_get(gl_item);
+
+   const Elm_Genlist_Item_Class *ic;
+
+   EINA_LIST_FOREACH(service_item_children_get(d), l, si)
+     {
+        Elm_Object_Item *nitem;
+        Elm_Genlist_Item_Type type = ELM_GENLIST_ITEM_NONE;
+        
+        if (service_item_children_get(si))
+          {
+             ic = &glic_service_origin;
+             type = ELM_GENLIST_ITEM_TREE;
+          }
+        else
+          ic = &glic_service_list;
+
+        nitem = elm_genlist_item_sorted_insert(list, ic, si, gl_item, type, 
+                                               &service_item_compare, NULL, NULL);
+        elm_genlist_item_expanded_set(nitem, EINA_FALSE);
+     }
+}
+
+static void
+service_list_contracted_cb(void *data, Evas_Object *o, void *event_info)
+{
+   Elm_Object_Item *gl_item = event_info;
+   elm_genlist_item_subitems_clear(gl_item);
+}
+
 
 Evas_Object *
 chrome_add(Browser_Window *win, const char *url, Session_Item *session_item)
@@ -2839,7 +3463,7 @@ chrome_add(Browser_Window *win, const char *url, Session_Item *session_item)
       (text_url, "activated", on_action_load_page, view);
 
    Evas_Object *ic = elm_icon_add(ed);
-   elm_icon_file_set(ic, PACKAGE_DATA_DIR "/default.edj", "clear-button");
+   elm_image_file_set(ic, PACKAGE_DATA_DIR "/default.edj", "clear-button");
    elm_object_part_content_set(text_url, "end", ic);
    evas_object_smart_callback_add(ic, "clicked", on_action_clear, chrome);
 
@@ -2848,7 +3472,15 @@ chrome_add(Browser_Window *win, const char *url, Session_Item *session_item)
    evas_object_data_set(chrome, "more-list", more_list);
    elm_object_part_content_set(chrome, "more-list-swallow", more_list);
    elm_object_style_set(more_list, "ewebkit");
-   elm_genlist_bounce_set(more_list, EINA_FALSE, EINA_FALSE);
+   elm_scroller_bounce_set(more_list, EINA_FALSE, EINA_FALSE);
+   evas_object_smart_callback_add(more_list, "expand,request", 
+                                  more_list_expand_request_cb, more_list);
+   evas_object_smart_callback_add(more_list, "contract,request", 
+                                  more_list_contract_request_cb, more_list);
+   evas_object_smart_callback_add(more_list, "expanded",
+                                  more_list_expanded_cb, more_list);
+   evas_object_smart_callback_add(more_list, "contracted", 
+                                  more_list_contracted_cb, more_list);
 
    Evas_Object *more_index = elm_index_add(ed);
    evas_object_data_set(more_list, "more-index", more_index);
@@ -2857,11 +3489,19 @@ chrome_add(Browser_Window *win, const char *url, Session_Item *session_item)
    elm_object_style_set(more_index, "ewebkit");
 
    Evas_Object *service_list = elm_genlist_add(ed);
+   evas_object_smart_callback_add(service_list, "expand,request", 
+                                  service_list_expand_request_cb, service_list);
+   evas_object_smart_callback_add(service_list, "contract,request", 
+                                  service_list_contract_request_cb, service_list);
+   evas_object_smart_callback_add(service_list, "expanded",
+                                  service_list_expanded_cb, service_list);
+   evas_object_smart_callback_add(service_list, "contracted", 
+                                  service_list_contracted_cb, service_list);
    evas_object_data_set(service_list, "chrome", chrome);
    evas_object_data_set(chrome, "service-list", service_list);
    elm_object_part_content_set(chrome, "service-list-swallow", service_list);
    elm_object_style_set(service_list, "ewebkit");
-   elm_genlist_bounce_set(service_list, EINA_FALSE, EINA_FALSE);
+   elm_scroller_bounce_set(service_list, EINA_FALSE, EINA_FALSE);
 
    Evas_Object *tab_grid = elm_gengrid_add(ed);
    elm_object_style_set(tab_grid, "ewebkit");
