@@ -15,7 +15,7 @@
 
 #include <Ecore_Getopt.h>
 #include <Ecore_File.h>
-#include <EDBus.h>
+#include <E_DBus.h>
 #include <stdlib.h>
 #include "gettext.h"
 
@@ -34,9 +34,17 @@ struct Cursor {
 };
 
 struct Eve_DBus_Request_Name_Response {
-  EDBus_Connection *conn;
+  E_DBus_Connection *conn;
   const char *url;
 };
+
+typedef struct _EDBus_Method
+{
+   char *member;
+   char *signature;
+   char *reply_signature;
+   E_DBus_Method_Cb func;
+} EDBus_Method;
 
 static void
 win_del(App *app, Evas_Object *win)
@@ -376,15 +384,17 @@ static const Ecore_Getopt options = {
    }
 };
 
-static EDBus_Message *
-_cb_dbus_open_url(const EDBus_Service_Interface *iface __UNUSED__,
-                  const EDBus_Message *msg)
+static DBusMessage *
+_cb_dbus_open_url(E_DBus_Object *obj, DBusMessage *msg)
 {
+   DBusError err;
    Browser_Window *win = eina_list_data_get(app.windows);
    char *tmp_uri;
    char *uri;
 
-   if (!edbus_message_arguments_get(msg, "s", &tmp_uri))
+   dbus_error_init(&err);
+   dbus_message_get_args(msg, &err, DBUS_TYPE_STRING, &tmp_uri, DBUS_TYPE_INVALID);
+   if (dbus_error_is_set(&err))
      goto end;
 
    if ((uri = uri_sanitize(tmp_uri)))
@@ -394,52 +404,68 @@ _cb_dbus_open_url(const EDBus_Service_Interface *iface __UNUSED__,
         free(uri);
      }
 end:
-   return edbus_message_method_return_new(msg);
+   return dbus_message_new_method_return(msg);
 }
 
 static const EDBus_Method methods[] = {
-   { "open_url", EDBUS_ARGS({"s", "url"}), NULL, _cb_dbus_open_url },
-   { }
-};
-
-static const EDBus_Service_Interface_Desc desc = {
-   "org.enlightenment.eve", methods
+   { "open_url", "s", NULL, _cb_dbus_open_url },
+   { NULL, NULL, NULL, NULL }
 };
 
 static void
-_cb_dbus_request_name(void *data, const EDBus_Message *msg,
-                      EDBus_Pending *pending)
+_dbus_obj_register(E_DBus_Connection *conn, char *path_name, char *iface_name, const EDBus_Method *methods)
+{
+   E_DBus_Object *obj_path = e_dbus_object_add(conn, path_name, NULL);
+   E_DBus_Interface *iface = e_dbus_interface_new(iface_name);
+   const EDBus_Method *_method;
+
+   e_dbus_object_interface_attach(obj_path, iface);
+   e_dbus_interface_unref(iface);
+
+   for (_method = methods; _method != NULL && _method->member != NULL; _method++)
+     e_dbus_interface_method_add(iface, _method->member,
+                                        _method->signature,
+                                        _method->reply_signature,
+                                        _method->func);
+}
+
+static void
+_cb_dbus_request_name(void *data, DBusMessage *msg, DBusError *err)
 {
    struct Eve_DBus_Request_Name_Response *response = data;
-   unsigned ret;
+   DBusError new_err;
+   dbus_uint32_t msgtype;
 
-   if (edbus_message_error_get(msg, NULL, NULL))
+   if (dbus_error_is_set(err))
+    goto cleanup;
+
+   dbus_error_init(&new_err);
+   if (!dbus_message_get_args(msg, &new_err, DBUS_TYPE_UINT32, &msgtype, DBUS_TYPE_INVALID))
      goto cleanup;
-
-   if (!edbus_message_arguments_get(msg, "u", &ret))
-     goto cleanup;
-
-   switch (ret) {
-   case EDBUS_NAME_REQUEST_REPLY_PRIMARY_OWNER:
-   case EDBUS_NAME_REQUEST_REPLY_ALREADY_OWNER:
+  
+   switch (msgtype) {
+   case DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER:
+   case DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER:
       {
-         edbus_service_interface_register(response->conn,
-                                          "/org/enlightenment/eve", &desc);
+         _dbus_obj_register(response->conn,
+                            "/org/enlightenment/eve",
+                            "org.enlightenment.eve", 
+                            methods);
       }
       break;
-   case EDBUS_NAME_REQUEST_REPLY_IN_QUEUE:
-   case EDBUS_NAME_REQUEST_REPLY_EXISTS:
+   case DBUS_REQUEST_NAME_REPLY_IN_QUEUE:
+   case DBUS_REQUEST_NAME_REPLY_EXISTS:
       {
-         EDBus_Message *open_url;
+         DBusMessage *open_url;
 
-	 ERR("eve is already running. Opening %s there and exiting",
+	       ERR("eve is already running. Opening %s there and exiting",
              response->url);
-         open_url = edbus_message_method_call_new("org.enlightenment.eve",
-                                                  "/org/enlightenment/eve",
-                                                  "org.enlightenment.eve",
-                                                  "open_url");
-         edbus_message_arguments_append(open_url, "s", response->url);
-         edbus_connection_send(response->conn, open_url, NULL, NULL, -1);
+         open_url = dbus_message_new_method_call("org.enlightenment.eve",
+                                                 "/org/enlightenment/eve",
+                                                 "org.enlightenment.eve",
+                                                 "open_url");
+         dbus_message_append_args(open_url, DBUS_TYPE_STRING, response->url, DBUS_TYPE_INVALID);
+         e_dbus_message_send(response->conn, open_url, NULL, -1, NULL);
       }
       elm_exit();
    }
@@ -634,7 +660,7 @@ elm_main(int argc, char **argv)
    const char *user_agent_str;
    char *backing_store_option = NULL;
    Backing_Store backing_store_enum;
-   EDBus_Connection *conn = NULL;
+   E_DBus_Connection *conn = NULL;
    size_t dirlen;
    Ecore_Timer *session_save_timer = NULL;
 
@@ -719,7 +745,7 @@ elm_main(int argc, char **argv)
    elm_theme_extension_add(NULL, PACKAGE_DATA_DIR "/default.edj");
    ewk_init();
    eve_state_init();
-   edbus_init();
+   e_dbus_init();
 
    home = getenv("HOME");
    if (!home || !home[0])
@@ -890,7 +916,7 @@ elm_main(int argc, char **argv)
    else
       url = config_home_page_get(config);
 
-   conn = edbus_connection_get(EDBUS_CONNECTION_TYPE_SESSION);
+   conn = e_dbus_bus_get(DBUS_BUS_SESSION);
    if (conn)
      {
         struct Eve_DBus_Request_Name_Response *response = calloc(1, sizeof(*response));
@@ -899,7 +925,7 @@ elm_main(int argc, char **argv)
         response->conn = conn;
         response->url = url;
 
-        edbus_name_request(conn, "org.enlightenment.eve", 0,
+        e_dbus_request_name(conn, "org.enlightenment.eve", 0,
                            _cb_dbus_request_name, response);
      }
 
@@ -934,7 +960,7 @@ end_session:
    // network_save shall be call before exit elm_run()
    network_free(network);
 end_network:
-   if (conn) edbus_connection_unref(conn);
+   if (conn) e_dbus_connection_close(conn);
    if (session_save_timer) ecore_timer_del(session_save_timer); 
 
    eina_log_domain_unregister(_log_domain);
@@ -942,7 +968,7 @@ end_network:
    elm_shutdown();
    ewk_shutdown();
    eve_state_shutdown();
-   edbus_shutdown();
+   e_dbus_shutdown();
    return r;
 }
 
