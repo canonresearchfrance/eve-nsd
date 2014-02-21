@@ -7,6 +7,7 @@
 
 #include <Eina.h>
 #include <Elementary.h>
+#include <cairo.h>
 
 #include "private.h"
 
@@ -1737,9 +1738,20 @@ on_view_networkservices_request_finished(void *data, Evas_Object *view, void *ev
    } else {
        Eina_List *l;
        Ewk_NetworkServices *srv;
+       Service_Item *item;
 
        EINA_LIST_FOREACH(service_iter, l, srv)
           ewk_network_services_allowed_notify(srv);
+
+       /* Save configuration service */
+       EINA_LIST_FOREACH(service_items, l, item) 
+       {
+           Eina_Bool allowed = service_item_widget_allowed_get(item);
+
+           /* Apply to the configuration */
+           service_config_register_services(item, allowed);
+       }
+       network_save(network, NULL);
 
        service_iter = eina_list_free(service_iter);
        evas_object_data_set(chrome, "services", service_iter);
@@ -2687,12 +2699,14 @@ view_screenshot_add(Evas *evas, const Evas_Object *view)
    if (cairo_status(cairo) != CAIRO_STATUS_SUCCESS)
       goto error_cairo_create;
 
+#ifdef VIEW_PAINT_CONTENTS
    if (!ewk_view_paint_contents(priv, cairo, &rect))
      {
         evas_object_del(img);
         img = NULL;
      }
    else
+#endif
      {
         dest = evas_object_image_data_get(img, EINA_TRUE);
         memmove(dest, pixels, rect.h * stride);

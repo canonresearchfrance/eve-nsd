@@ -920,6 +920,28 @@ void service_config_register_services(Service_Item *item, Eina_Bool allowed) {
 
     origin = service_config_network_origin_get(network, item->config.origin);
 
+    /* Securty policy for legacy devices */
+    if (allowed && item->services)
+    {
+        Ewk_NetworkService *srv = eina_list_nth(item->services, 0);
+        Eina_Bool corsEnable = ewk_network_service_is_cors_enable(srv);
+
+        if (corsEnable == EINA_FALSE) 
+        {
+            char* dest = strdup(ewk_network_service_url_get(srv));
+            char* ptr;
+        
+            ptr = strchr(dest, ':'); /* offset "protocol://" */
+            ptr+= 3; /* skip "://" */
+            ptr = strchr(ptr, '/');
+            ptr[0] = '\0';
+
+            ewk_security_policy_whitelist_origin_add(item->config.origin, dest, EINA_TRUE);
+
+            free(dest);
+        }
+    }
+
     switch(item->type) 
     {
     case NETWORK_TYPE_DEVICE_UPNP:

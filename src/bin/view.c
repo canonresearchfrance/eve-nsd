@@ -46,9 +46,9 @@ static const float ZOOM_STEPS[] = {
 static const unsigned int ZOOM_STEPS_LAST = sizeof(ZOOM_STEPS) / sizeof(ZOOM_STEPS[0]);
 
 /*
- * Structure filled by ewk_view_single_smart_set() from
+ * Structure filled by ewk_view_smart_set() from
  * view_add(). This contains the pointers to vanilla/pristine
- * ewk_view_single, which will be used to implement super() behavior
+ * ewk_view, which will be used to implement super() behavior
  * in C.
  */
 static Ewk_View_Smart_Class _parent_sc = EWK_VIEW_SMART_CLASS_INIT_NULL;
@@ -82,11 +82,14 @@ struct point_history
 /* Extends Ewk_View_Smart_Data to add some members we'll need */
 struct _View_Smart_Data
 {
-   /* Original type must be the first, so ewk_view and ewk_view_single know
+   /* Original type must be the first, so ewk_view know
     * how to access it (the memory offsets will remain the same).
     */
    Ewk_View_Smart_Data base;
 
+   Ecore_Idler *idler_close_window;
+
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    /* where to keep track of our animators */
    struct
    {
@@ -94,7 +97,6 @@ struct _View_Smart_Data
       Ecore_Animator *zoom;
       Ecore_Animator *kinetic;
    } animator;
-   Ecore_Idler *idler_close_window;
 
    /* context used during pan/scroll animator */
    struct
@@ -162,6 +164,7 @@ struct _View_Smart_Data
          Eina_Bool y : 1;
       } done;
    } kinetic;
+#endif
 
    /* general flags */
    struct
@@ -170,7 +173,7 @@ struct _View_Smart_Data
       Eina_Bool animated_zoom : 1;
       Eina_Bool touch_interface : 1;
    } flags;
-#if 0
+#ifdef CONTEXT_MENU
    Evas_Object *context_menu;
 #endif
 };
@@ -335,7 +338,9 @@ _view_load_finished(void *data, Evas_Object *view, void *event_info __UNUSED__)
    h *= 2;
 
    INF("load finished, pre-render %d,%d+%dx%d at %0.2f", x, y, w, h, zoom);
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    ewk_view_pre_render_region(view, x, y, w, h, zoom);
+#endif
 }
 
 /* stop animators, we changed page */
@@ -344,6 +349,7 @@ _view_uri_changed(void *data, Evas_Object *view, void *event_info __UNUSED__)
 {
    View_Smart_Data *sd = data;
 
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    if (sd->animator.pan)
      {
         ecore_animator_del(sd->animator.pan);
@@ -364,8 +370,10 @@ _view_uri_changed(void *data, Evas_Object *view, void *event_info __UNUSED__)
         ecore_animator_del(sd->animator.zoom);
         sd->animator.zoom = NULL;
      }
+#endif
 }
 
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
 /* ask ewk_view to pre render in the given direction.
  *
  * This uses a heuristics to create a pre-render region using the
@@ -437,6 +445,7 @@ _view_pan_pre_render(View_Smart_Data *sd, Evas_Coord dx, Evas_Coord dy)
        px, py, pw, ph, zoom, x, y, w, h);
    ewk_view_pre_render_region(sd->base.self, px, py, pw, ph, zoom);
 }
+#endif
 
 static unsigned int
 _view_zoom_closest_index_find(float zoom)
@@ -461,6 +470,7 @@ _view_zoom_closest_index_find(float zoom)
    return close_idx;
 }
 
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
 /***********************************************************************
  * Animators: shared timers at fixed frame rate/interval.              *
  **********************************************************************/
@@ -911,9 +921,11 @@ _view_zoom_stop(View_Smart_Data *sd, const Evas_Event_Mouse_Up *ev __UNUSED__)
 
    return EINA_TRUE;
 }
+#endif
 
 /************** Event handlers *****************/
 
+#ifdef CONTEXT_MENU
 static Eina_Bool
 _view_contextmenu_free(void *data)
 {
@@ -921,7 +933,6 @@ _view_contextmenu_free(void *data)
    evas_object_del(notify);
    return EINA_FALSE;
 }
-#if 0
 static void
 _view_contextmenu_item_selected(void *data, Evas_Object *li, void *event_info __UNUSED__)
 {
@@ -1041,7 +1052,7 @@ _view_smart_add(Evas_Object *o)
       (o, "load,finished", _view_load_finished, sd);
    evas_object_smart_callback_add
       (o, "uri,changed", _view_uri_changed, sd);
-#if 0
+#ifdef CONTEXT_MENU
    evas_object_smart_callback_add
       (o, "contextmenu,new", on_view_contextmenu_new, sd);
    evas_object_smart_callback_add
@@ -1057,6 +1068,7 @@ _view_smart_del(Evas_Object *o)
 {
    VIEW_SD_GET_OR_RETURN(o, sd);
 
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    /* Must delete all extra fields before calling parent method,
     * as parent's will free View_Smart_Data.
     */
@@ -1068,6 +1080,7 @@ _view_smart_del(Evas_Object *o)
 
    if (sd->animator.kinetic)
       ecore_animator_del(sd->animator.kinetic);
+#endif
 
    if (sd->idler_close_window)
       ecore_idler_del(sd->idler_close_window);
@@ -1141,6 +1154,7 @@ _view_smart_mouse_down(Ewk_View_Smart_Data *esd, const Evas_Event_Mouse_Down *ev
    if (!sd->flags.touch_interface)
      goto forward_event;
 
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    /* do not handle down when doing animated zoom */
    if (sd->flags.animated_zoom)
       return EINA_FALSE;
@@ -1197,9 +1211,10 @@ _view_smart_mouse_down(Ewk_View_Smart_Data *esd, const Evas_Event_Mouse_Down *ev
    sd->mouse_down_copy = *ev;
 
    return EINA_TRUE;
+#endif
 
 forward_event:
-#if 0
+#ifdef CONTEXT_MENU
    if (ev->button == 3) // forward of context menu event is special
       return ewk_view_context_menu_forward_event(sd->base.self, ev);
 #endif
@@ -1220,6 +1235,7 @@ static Eina_Bool
 _view_smart_mouse_up(Ewk_View_Smart_Data *esd, const Evas_Event_Mouse_Up *ev)
 {
    View_Smart_Data *sd = (View_Smart_Data *)esd;
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    Eina_Bool used;
 
    /* non-touch interface just forwards events */
@@ -1255,6 +1271,7 @@ _view_smart_mouse_up(Ewk_View_Smart_Data *esd, const Evas_Event_Mouse_Up *ev)
     * sequence correctly.
     */
    _parent_sc.mouse_down(esd, &sd->mouse_down_copy);
+#endif
    return _parent_sc.mouse_up(esd, ev);
 }
 
@@ -1267,6 +1284,7 @@ _view_smart_mouse_move(Ewk_View_Smart_Data *esd, const Evas_Event_Mouse_Move *ev
 {
    View_Smart_Data *sd = (View_Smart_Data *)esd;
 
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    if (sd->animator.pan)
      {
         /* account sample in circular array */
@@ -1285,6 +1303,7 @@ _view_smart_mouse_move(Ewk_View_Smart_Data *esd, const Evas_Event_Mouse_Move *ev
 
    if (sd->animator.zoom)
       return EINA_FALSE;
+#endif
 
    return _parent_sc.mouse_move(esd, ev);
 }
@@ -1509,20 +1528,20 @@ view_add(Evas_Object *parent, Backing_Store bs)
 
    if (!smart)
      {
-        /* create ewk_view_single subclass, this is done only once! */
+        /* create ewk_view subclass, this is done only once! */
         static Ewk_View_Smart_Class api = EWK_VIEW_SMART_CLASS_INIT_NAME_VERSION("EWK_View_Demo");
 
-        /* set current and parent apis to vanilla ewk_view_single methods */
-        ewk_view_single_smart_set(&api);
-        ewk_view_single_smart_set(&_parent_sc);
+        /* set current and parent apis to vanilla ewk_view methods */
+        ewk_view_smart_set(&api);
+        ewk_view_smart_set(&_parent_sc);
 
         /* override methods we want custom behavior */
         api.sc.add = _view_smart_add;
         api.sc.del = _view_smart_del;
         api.sc.calculate = _view_smart_calculate;
-        api.mouse_down = _view_smart_mouse_down;
+        /*api.mouse_down = _view_smart_mouse_down;
         api.mouse_up = _view_smart_mouse_up;
-        api.mouse_move = _view_smart_mouse_move;
+        api.mouse_move = _view_smart_mouse_move;*/
         api.add_console_message = _view_smart_add_console_message;
         api.window_create = _view_smart_window_create;
         api.window_close = _view_smart_window_close;
@@ -1558,6 +1577,7 @@ void view_zoom_reset(Evas_Object *view)
 {
    Evas_Coord w, h;
    VIEW_SD_GET_OR_RETURN(view, sd);
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    if (sd->flags.animated_zoom || sd->animator.pan || sd->animator.zoom)
       return;
 
@@ -1568,6 +1588,7 @@ void view_zoom_reset(Evas_Object *view)
      }
 
    sd->flags.animated_zoom = EINA_TRUE;
+#endif
    ewk_frame_visible_content_geometry_get
       (sd->base.main_frame, EINA_FALSE, NULL, NULL, &w, &h);
    ewk_view_zoom_animated_set
@@ -1580,10 +1601,8 @@ void view_zoom_next_up(Evas_Object *view)
    float zoom = ewk_frame_page_zoom_get(sd->base.main_frame);
    unsigned int idx = _view_zoom_closest_index_find(zoom);
    Evas_Coord w, h;
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    if (sd->flags.animated_zoom || sd->animator.pan || sd->animator.zoom)
-      return;
-
-   if (idx + 1 >= ZOOM_STEPS_LAST)
       return;
 
    if (sd->animator.kinetic)
@@ -1591,10 +1610,16 @@ void view_zoom_next_up(Evas_Object *view)
         ecore_animator_del(sd->animator.kinetic);
         sd->animator.kinetic = NULL;
      }
+#endif
+
+   if (idx + 1 >= ZOOM_STEPS_LAST)
+      return;
 
    idx++;
    zoom = ZOOM_STEPS[idx];
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    sd->flags.animated_zoom = EINA_TRUE;
+#endif
    ewk_frame_visible_content_geometry_get
       (sd->base.main_frame, EINA_FALSE, NULL, NULL, &w, &h);
    ewk_view_zoom_animated_set
@@ -1607,10 +1632,8 @@ void view_zoom_next_down(Evas_Object *view)
    float zoom = ewk_frame_page_zoom_get(sd->base.main_frame);
    unsigned int idx = _view_zoom_closest_index_find(zoom);
    Evas_Coord w, h;
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    if (sd->flags.animated_zoom || sd->animator.pan || sd->animator.zoom)
-      return;
-
-   if (idx == 0)
       return;
 
    if (sd->animator.kinetic)
@@ -1618,17 +1641,23 @@ void view_zoom_next_down(Evas_Object *view)
         ecore_animator_del(sd->animator.kinetic);
         sd->animator.kinetic = NULL;
      }
+#endif
+
+   if (idx == 0)
+      return;
 
    idx--;
    zoom = ZOOM_STEPS[idx];
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    sd->flags.animated_zoom = EINA_TRUE;
+#endif
    ewk_frame_visible_content_geometry_get
       (sd->base.main_frame, EINA_FALSE, NULL, NULL, &w, &h);
    ewk_view_zoom_animated_set
       (view, zoom, ZOOM_AUTO_ANIMATION_DURATION, w / 2, h / 2);
 }
 
-#if 0
+#ifdef CONTEXT_MENU
 Eina_Bool view_context_menu_set(Evas_Object *view, Evas_Object *widget, Ewk_Context_Menu *menu)
 {
    VIEW_SD_GET_OR_RETURN(view, sd, EINA_FALSE);
@@ -1677,6 +1706,7 @@ void view_touch_interface_set(Evas_Object *view, Eina_Bool setting)
    else
      ewk_view_fixed_layout_size_set(view, 0, 0);
 
+#ifdef OVERRIDE_ZOOM_PAN_ANIMATOR
    if (setting) return; /* nothing else to do to enter touch mode */
 
    if (sd->animator.kinetic)
@@ -1693,6 +1723,7 @@ void view_touch_interface_set(Evas_Object *view, Eina_Bool setting)
      }
    else if (sd->animator.zoom)
      _view_zoom_stop(sd, &ev);
+#endif
 }
 
 Eina_Bool view_touch_interface_get(const Evas_Object *view)
