@@ -7,7 +7,6 @@
 
 #include <Eina.h>
 #include <Elementary.h>
-#include <cairo.h>
 
 #include "private.h"
 
@@ -2662,65 +2661,6 @@ on_more_item_click(void *data, Evas_Object *obj,
      }
 }
 
-Evas_Object *
-view_screenshot_add(Evas *evas, const Evas_Object *view)
-{
-   Evas_Object *img;
-   Ewk_View_Smart_Data *sd;
-   Ewk_View_Private_Data *priv;
-   Eina_Rectangle rect = { 0, 0, 480, 800 };
-   cairo_surface_t *surface;
-   cairo_format_t format;
-   cairo_t *cairo;
-   int stride;
-   void *pixels, *dest;
-
-   sd = (Ewk_View_Smart_Data *)evas_object_smart_data_get(view);
-   priv = (Ewk_View_Private_Data *)sd->_priv;
-
-   /* assuming colorspace is EVAS_COLORSPACE_ARGB8888 */
-   stride = rect.w * 4;
-   format = CAIRO_FORMAT_RGB24;
-
-   img = evas_object_image_filled_add(evas);
-   evas_object_resize(img, rect.w, rect.h);
-   evas_object_image_size_set(img, rect.w, rect.h);
-   evas_object_image_colorspace_set(img, EVAS_COLORSPACE_ARGB8888);
-   evas_object_image_alpha_set(img, EINA_FALSE);
-   pixels = evas_object_image_data_get(img, EINA_TRUE);
-
-   surface =
-      cairo_image_surface_create_for_data(pixels, format, rect.w, rect.h,
-                                          stride);
-   if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
-      goto error_cairo_surface_create;
-
-   cairo = cairo_create(surface);
-   if (cairo_status(cairo) != CAIRO_STATUS_SUCCESS)
-      goto error_cairo_create;
-
-#ifdef VIEW_PAINT_CONTENTS
-   if (!ewk_view_paint_contents(priv, cairo, &rect))
-     {
-        evas_object_del(img);
-        img = NULL;
-     }
-   else
-#endif
-     {
-        dest = evas_object_image_data_get(img, EINA_TRUE);
-        memmove(dest, pixels, rect.h * stride);
-        evas_object_image_data_set(img, dest);
-     }
-
-error_cairo_create:
-   cairo_destroy(cairo);
-error_cairo_surface_create:
-   cairo_surface_destroy(surface);
-
-   return img;
-}
-
 static void
 tab_grid_item_click(void *data, Evas_Object *obj __UNUSED__, void *event_info __UNUSED__)
 {
@@ -3050,9 +2990,8 @@ tab_grid_content_get(void *data, Evas_Object *obj __UNUSED__, const char *part _
 {
    if (data)
      {
-        const Evas_Object *view = data;
-        Evas *evas = evas_object_evas_get(view);
-        return view_screenshot_add(evas, view);
+        Eina_Rectangle rect = { 0, 0, 1024, 768 };
+        return ewk_view_screenshot_contents_get((const Evas_Object *)data, &rect, 0.15f);
      }
 
    return NULL;

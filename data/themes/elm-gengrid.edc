@@ -1,7 +1,7 @@
 group { name: "elm/gengrid/item/default/ewebkit";
    alias: "elm/gengrid/item/default_style/ewebkit";
    data.item: "texts" "elm.text";
-   data.item: "icons" "elm.swallow.icon elm.swallow.end";
+   data.item: "contents" "elm.swallow.icon elm.swallow.end";
    images {
       image: "tab-bg.png" COMP;
       image: "tab-bg-selected.png" COMP;
