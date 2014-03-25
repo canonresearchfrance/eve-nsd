@@ -1,6 +1,11 @@
-eve
+WebKit-EFL demo application for the Network Service Description (NSD) API.
+This application is a browser that runs on top of WebKit-NSD (https://bitbucket.org/youennf/webkit-nsd) library.
 
-WebKit-EFL demo application
+It demonstrates the use of the NSD API (https://bitbucket.org/youennf/webkit-nsd-demo).
+It also demonstrates a possible user interface of the NSD user granting process.
+
+Note that this application is a fork of the eve browser (https://trac.enlightenment.org/e/wiki/Eve).
+In addition to NSD specific stuff, it also contains updates need to run eve on the latest WebKit library.
 
 See INSTALL for help on how to install.
 See COPYING for software usage, modification and redistribution license.
