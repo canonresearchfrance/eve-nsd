@@ -1,6 +1,6 @@
 WebKit-EFL application for the [Network Service Description](http://www.w3.org/TR/discovery-api/) (NSD) API.
 
-This is a browser that runs on top of a fork of WebKit implementing the NSD API (https://github.com/canonresearchfrance/youennf/webkit-nsd).
+This is a browser that runs on top of a fork of WebKit implementing the NSD API (https://github.com/canonresearchfrance/webkit).
 It allows demonstrating the use of the NSD API (https://github.com/canonresearchfrance/webkit-nsd-demo).
 It also demonstrates a possible user interface of the NSD user granting process.
 
